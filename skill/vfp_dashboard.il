@@ -71,9 +71,49 @@ defun( vfpUpdateDashboard ()
         form->vfpLibVal->value  = if( cv cv~>libName "(none)" )
         form->vfpCellVal->value = if( cv cv~>cellName "" )
         form->vfpViewVal->value = if( cv cv~>viewName "" )
-        ;; ADE test and result summary are populated in later milestones.
+        when( vfpStateGet('connected) vfpRefreshResults() )
         t
     )
+  )
+)
+
+;; Pull the latest result from the tunnel and render metrics + pass/fail
+;; into the ADE field and the result text area.
+defun( vfpRefreshResults ()
+  let( (form res ok payload result metrics cons overall txt)
+    form = vfpStateGet('dashForm)
+    when( form
+      res = vfpRpcExec("result.latest" nil)
+      ok = car(res)
+      payload = cadr(res)
+      result = and(ok vfpAlistGet(payload "result"))
+      if( null(result)
+        then
+          form->vfpAdeVal->value = "(no result)"
+          vfpDashboardSetResult("No results yet.")
+        else
+          metrics = vfpAlistGet(result "metrics")
+          cons    = vfpAlistGet(result "constraints")
+          overall = and(cons vfpAlistGet(cons "overall"))
+          form->vfpAdeVal->value =
+            sprintf(nil "%s%s"
+              vfpToStr(or(vfpAlistGet(result "test") vfpAlistGet(result "source") "result"))
+              if(overall sprintf(nil " - %s" upperCase(overall)) ""))
+          txt = ""
+          foreach( pair metrics
+            txt = strcat(txt sprintf(nil "%s = %s\n" car(pair) vfpToStr(cadr(pair)))) )
+          when( cons
+            txt = strcat(txt sprintf(nil "\nConstraints: %s\n" upperCase(overall)))
+            foreach( item vfpAlistGet(cons "items")
+              when( equal(vfpAlistGet(item "status") "fail")
+                txt = strcat(txt sprintf(nil "  FAIL %s: %s\n"
+                  vfpAlistGet(item "metric") vfpToStr(vfpAlistGet(item "reason")))) )
+            )
+          )
+          vfpDashboardSetResult(txt)
+      )
+    )
+    t
   )
 )
 

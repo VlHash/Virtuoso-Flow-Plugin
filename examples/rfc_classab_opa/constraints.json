@@ -1,0 +1,22 @@
+{
+  "schema_version": "0.1",
+  "design": { "lib": "RFCOPA", "cell": "XOPA", "view": "schematic" },
+  "metrics": {
+    "A0_dB": { "min": 100 },
+    "UGB_MHz": { "min": 50, "max": 100 },
+    "PM_deg": { "min": 65, "max": 80 },
+    "Itotal_uA": { "max": 600 },
+    "Itail_uA": { "min": 120 },
+    "stage2_ratio": { "max": 0.6 }
+  },
+  "dcop": {
+    "require_saturation": {
+      "devices": ["M0", "M1", "M2", "M3", "M6", "M7", "M9", "M10", "M11", "M12"]
+    },
+    "min_sat_margin_mV": 30
+  },
+  "permissions": {
+    "allow_modify": ["M*.w", "M*.l", "M*.m", "C*.c", "R*.r"],
+    "deny_modify": ["VDD.*", "VSS.*", "model.*"]
+  }
+}

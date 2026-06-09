@@ -44,6 +44,13 @@ def test_example_proposal_conforms():
         "proposal", _read("examples", "rfc_classab_opa", "sample_proposal.json")) is True
 
 
+def test_example_result_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    assert vfp_schemas.validate(
+        "result", _read("examples", "rfc_classab_opa", "sample_result.json")) is True
+
+
 def test_bad_proposal_raises():
     jsonschema = pytest.importorskip("jsonschema")
     from vfp_tunnel.rpc import schemas as vfp_schemas

@@ -1,0 +1,15 @@
+{
+  "schema_version": "0.1",
+  "result_id": "r_20260609_001",
+  "source": "manual",
+  "test": "ac_loopgain",
+  "cellview": { "lib": "RFCOPA", "cell": "XOPA", "view": "schematic" },
+  "metrics": {
+    "A0_dB": 101.4,
+    "UGB_MHz": 62.0,
+    "PM_deg": 85.2,
+    "Itotal_uA": 520.0,
+    "Itail_uA": 140.0,
+    "stage2_ratio": 0.5
+  }
+}

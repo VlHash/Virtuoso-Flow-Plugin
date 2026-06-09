@@ -327,6 +327,100 @@ def cmd_transaction_show(args):
     return 0
 
 
+# ---- result / constraint --------------------------------------------
+def _load_struct(path):
+    """Load a JSON or YAML file into a Python structure.
+
+    YAML needs PyYAML (optional); JSON is always supported.
+    """
+    if path.endswith((".yaml", ".yml")):
+        try:
+            import yaml
+        except ImportError:
+            raise ValueError("reading %s needs PyYAML (pip install pyyaml) "
+                             "or provide a .json file" % path)
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def cmd_result_import(args):
+    from .sim.parser import parse_metrics_file
+    try:
+        metrics = parse_metrics_file(args.file)
+    except (OSError, ValueError) as e:
+        return _fail("could not read %s: %s" % (args.file, e))
+    if not metrics:
+        return _fail("no metrics found in %s" % args.file)
+    result = {"metrics": metrics, "source": args.source}
+    if args.test:
+        result["test"] = args.test
+    payload = {"result": result}
+    if args.constraints:
+        try:
+            limits = (_load_struct(args.constraints) or {}).get("metrics")
+        except (OSError, ValueError) as e:
+            return _fail(e)
+        if limits:
+            payload["constraints"] = limits
+    host, port = _endpoint(args)
+    try:
+        res = call("result.update", payload, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    r = res.get("result", {})
+    line = "imported %s  (%d metrics)" % (r.get("result_id"), len(r.get("metrics", {})))
+    cons = r.get("constraints")
+    if cons:
+        line += "  constraints=%s" % cons.get("overall")
+    print(line)
+    return 0
+
+
+def cmd_result_latest(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("result.latest", {}, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    r = res.get("result")
+    if not r:
+        print("No result stored yet.")
+        return 0
+    print(json.dumps(r, indent=2))
+    return 0
+
+
+def cmd_constraint_check(args):
+    try:
+        limits = (_load_struct(args.file) or {}).get("metrics")
+    except (OSError, ValueError) as e:
+        return _fail(e)
+    if not limits:
+        return _fail("no 'metrics' limits found in %s" % args.file)
+    params = {"constraints": limits}
+    if args.result:
+        from .sim.parser import parse_metrics_file
+        try:
+            params["metrics"] = parse_metrics_file(args.result)
+        except (OSError, ValueError) as e:
+            return _fail(e)
+    host, port = _endpoint(args)
+    try:
+        res = call("constraint.check", params, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    for item in res.get("items", []):
+        val = item.get("value", "-")
+        mark = "PASS" if item["status"] == "pass" else "FAIL"
+        reason = ("  %s" % item["reason"]) if item.get("reason") else ""
+        print("  [%s] %-14s %s%s" % (mark, item["metric"], val, reason))
+    overall = res.get("overall")
+    print("overall: %s (metrics from %s)" % (overall.upper(), res.get("source")))
+    return 0 if overall == "pass" else 1
+
+
 # ---- parser ---------------------------------------------------------
 def build_parser():
     p = argparse.ArgumentParser(prog="vfp", description="VFP Tunnel CLI")
@@ -406,6 +500,26 @@ def build_parser():
     tshow = tsub2.add_parser("show", help="show a transaction in full")
     tshow.add_argument("transaction_id")
     tshow.set_defaults(func=cmd_transaction_show)
+
+    result = groups.add_parser("result", help="simulation results")
+    rsub = result.add_subparsers(dest="cmd")
+    ri = rsub.add_parser("import", help="import metrics from a result file")
+    ri.add_argument("--file", required=True)
+    ri.add_argument("--source", default="manual")
+    ri.add_argument("--test", default=None)
+    ri.add_argument("--constraints", default=None,
+                    help="constraint file to evaluate against on import")
+    ri.set_defaults(func=cmd_result_import)
+    rsub.add_parser("latest", help="print the latest stored result").set_defaults(
+        func=cmd_result_latest)
+
+    constraint = groups.add_parser("constraint", help="constraint checking")
+    konsub = constraint.add_subparsers(dest="cmd")
+    cc = konsub.add_parser("check", help="check a constraint file against metrics")
+    cc.add_argument("--file", required=True, help="constraint file (.yaml/.json)")
+    cc.add_argument("--result", default=None,
+                    help="metrics/result file (defaults to the latest stored result)")
+    cc.set_defaults(func=cmd_constraint_check)
 
     return p
 
