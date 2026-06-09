@@ -1,14 +1,257 @@
 ;; =====================================================================
 ;; vfp_proposal.il — receive, display, and handle proposals
 ;; ---------------------------------------------------------------------
-;; STUB (Milestone 4). Proposal states:
+;; Proposal states:
 ;;   pending -> approved -> applied
 ;;           -> rejected
 ;;           -> failed -> rolled_back
+;; All tunnel calls go through vfpRpcExec(method args).
+;; Return value is list(ok payload); ok is t on success, nil on error.
 ;; =====================================================================
 
-defun( vfpFetchPendingProposals ()      vfpNotImplemented("vfpFetchPendingProposals") )
-defun( vfpShowProposal (proposal)       vfpNotImplemented("vfpShowProposal") )
-defun( vfpApproveProposal (proposalId)  vfpNotImplemented("vfpApproveProposal") )
-defun( vfpRejectProposal (proposalId)   vfpNotImplemented("vfpRejectProposal") )
-defun( vfpApplyProposal (proposalId)    vfpNotImplemented("vfpApplyProposal") )
+
+;; ---- vfpFetchPendingProposals ---------------------------------------
+;; Returns a list of alist proposals with status "pending".
+;; Populates the dashboard result area with a summary.
+defun( vfpFetchPendingProposals ()
+  let( (ret ok payload proposals summary line cv changes)
+    ret = vfpRpcExec("proposal.list" list("--param-json" "status=\"pending\""))
+    ok      = car(ret)
+    payload = cadr(ret)
+    if( null(ok)
+      then
+        vfpDashboardSetResult(vfpFmtError(payload))
+        nil
+      else
+        proposals = vfpAlistGet(payload "proposals")
+        if( null(proposals)
+          then
+            vfpDashboardSetResult("No pending proposals.")
+            list()
+          else
+            summary = ""
+            foreach( p proposals
+              cv      = vfpAlistGet(p "cellview")
+              changes = vfpAlistGet(p "changes")
+              line    = sprintf(nil "[%s]  %s/%s/%s  %d change(s)  %s\n"
+                          vfpAlistGet(p "proposal_id")
+                          vfpAlistGet(cv "lib")
+                          vfpAlistGet(cv "cell")
+                          vfpAlistGet(cv "view")
+                          length(changes)
+                          vfpAlistGet(p "reason"))
+              summary = strcat(summary line)
+            )
+            vfpDashboardSetResult(summary)
+            proposals
+        )
+    )
+  )
+)
+
+
+;; ---- vfpShowProposal ------------------------------------------------
+;; proposal: an alist (as returned by vfpFetchPendingProposals).
+;; Opens a read-only dialog with the proposal details and
+;; Approve / Reject buttons.
+defun( vfpShowProposal (proposal)
+  let( (pid reason cv changes txt form)
+    pid     = vfpAlistGet(proposal "proposal_id")
+    reason  = vfpAlistGet(proposal "reason")
+    cv      = vfpAlistGet(proposal "cellview")
+    changes = vfpAlistGet(proposal "changes")
+
+    ;; Build a human-readable summary string.
+    txt = sprintf(nil
+      "Proposal: %s\nCellview: %s/%s/%s\nReason:   %s\n\nChanges (%d):\n"
+      pid
+      vfpAlistGet(cv "lib")
+      vfpAlistGet(cv "cell")
+      vfpAlistGet(cv "view")
+      reason
+      length(changes)
+    )
+    foreach( ch changes
+      txt = strcat(txt
+        sprintf(nil "  %s.%s: %s -> %s\n"
+          vfpAlistGet(ch "instance")
+          vfpAlistGet(ch "param")
+          vfpAlistGet(ch "before")
+          vfpAlistGet(ch "after")
+        )
+      )
+    )
+
+    form = hiCreateAppForm(
+      ?name        'vfpProposalForm
+      ?formTitle   sprintf(nil "Proposal: %s" pid)
+      ?fields      list(
+        list( hiCreateMLTextField(?name 'vfpPropDetail ?value txt ?editable nil
+                                  ?hasVerticalScrollbar t)
+              10:10 460:200 )
+        list( hiCreateButton(?name 'vfpPropApprove ?buttonText "Approve"
+                ?callback sprintf(nil "vfpApproveProposal(\"%s\")" pid))
+              10:220 100:28 )
+        list( hiCreateButton(?name 'vfpPropReject  ?buttonText "Reject"
+                ?callback sprintf(nil "vfpRejectProposal(\"%s\")" pid))
+              120:220 100:28 )
+      )
+      ?buttonLayout 'Close
+    )
+    hiDisplayForm(form)
+    form
+  )
+)
+
+
+;; ---- vfpApproveProposal --------------------------------------------
+defun( vfpApproveProposal (proposalId)
+  let( (ret ok payload p)
+    ret     = vfpRpcExec("proposal.approve"
+                list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+    ok      = car(ret)
+    payload = cadr(ret)
+    if( null(ok)
+      then
+        hiDisplayAppDBox(
+          ?name    'vfpErrDBox
+          ?dboxText sprintf(nil "Approve failed:\n%s" vfpFmtError(payload))
+          ?buttonLayout 'Close
+        )
+        nil
+      else
+        p = vfpAlistGet(payload "proposal")
+        vfpLog(sprintf(nil "approved proposal %s" proposalId))
+        hiDisplayAppDBox(
+          ?name    'vfpInfoDBox
+          ?dboxText sprintf(nil "Proposal %s approved.\nStatus: %s"
+                      proposalId vfpAlistGet(p "status"))
+          ?buttonLayout 'Close
+        )
+        vfpFetchPendingProposals()   ;; refresh list
+        t
+    )
+  )
+)
+
+
+;; ---- vfpRejectProposal ---------------------------------------------
+defun( vfpRejectProposal (proposalId)
+  let( (ret ok payload p)
+    ret     = vfpRpcExec("proposal.reject"
+                list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+    ok      = car(ret)
+    payload = cadr(ret)
+    if( null(ok)
+      then
+        hiDisplayAppDBox(
+          ?name    'vfpErrDBox
+          ?dboxText sprintf(nil "Reject failed:\n%s" vfpFmtError(payload))
+          ?buttonLayout 'Close
+        )
+        nil
+      else
+        p = vfpAlistGet(payload "proposal")
+        vfpLog(sprintf(nil "rejected proposal %s" proposalId))
+        hiDisplayAppDBox(
+          ?name    'vfpInfoDBox
+          ?dboxText sprintf(nil "Proposal %s rejected.\nStatus: %s"
+                      proposalId vfpAlistGet(p "status"))
+          ?buttonLayout 'Close
+        )
+        vfpFetchPendingProposals()   ;; refresh list
+        t
+    )
+  )
+)
+
+
+;; ---- vfpApplyProposal -----------------------------------------------
+;; Actually sets the instance parameters in the open schematic, then
+;; calls proposal.mark_applied (or proposal.mark_failed on error).
+defun( vfpApplyProposal (proposalId)
+  let( (ret ok payload proposal changes cv lib cell cv_obj inst param after ok2 ret2)
+    ;; 1. Fetch the full proposal record.
+    ret     = vfpRpcExec("proposal.get"
+                list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+    ok      = car(ret)
+    payload = cadr(ret)
+    when( null(ok)
+      hiDisplayAppDBox(
+        ?name    'vfpErrDBox
+        ?dboxText sprintf(nil "Apply failed (get):\n%s" vfpFmtError(payload))
+        ?buttonLayout 'Close
+      )
+      return(nil)
+    )
+
+    proposal = vfpAlistGet(payload "proposal")
+    changes  = vfpAlistGet(proposal "changes")
+    cv       = vfpAlistGet(proposal "cellview")
+    lib      = vfpAlistGet(cv "lib")
+    cell     = vfpAlistGet(cv "cell")
+
+    ;; 2. Open (or locate) the cellview.
+    cv_obj = dbOpenCellViewByType(lib cell "schematic" "schematic" "r")
+    unless( cv_obj
+      hiDisplayAppDBox(
+        ?name    'vfpErrDBox
+        ?dboxText sprintf(nil "Cannot open schematic %s/%s" lib cell)
+        ?buttonLayout 'Close
+      )
+      ;; Mark as failed in the tunnel.
+      vfpRpcExec("proposal.mark_failed"
+        list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+      return(nil)
+    )
+
+    ;; 3. Apply each change (set_instance_param).
+    ok2 = t
+    foreach( ch changes
+      inst  = vfpAlistGet(ch "instance")
+      param = vfpAlistGet(ch "param")
+      after = vfpAlistGet(ch "after")
+      let( (instObj)
+        instObj = car(setof(i cv_obj~>instances i~>name == inst))
+        if( null(instObj)
+          then
+            vfpLog(sprintf(nil "apply: instance %s not found; skipping" inst))
+          else
+            errset(
+              iProp(instObj param after)
+              vfpLog(sprintf(nil "apply error on %s.%s" inst param))
+              ok2 = nil
+            )
+        )
+      )
+    )
+
+    ;; 4. Save and close.
+    dbSave(cv_obj)
+    dbClose(cv_obj)
+
+    ;; 5. Mark the proposal as applied or failed.
+    if( ok2
+      then
+        ret2 = vfpRpcExec("proposal.mark_applied"
+                 list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+        vfpLog(sprintf(nil "proposal %s applied" proposalId))
+        hiDisplayAppDBox(
+          ?name    'vfpInfoDBox
+          ?dboxText sprintf(nil "Proposal %s applied successfully." proposalId)
+          ?buttonLayout 'Close
+        )
+        vfpFetchPendingProposals()
+        t
+      else
+        vfpRpcExec("proposal.mark_failed"
+          list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+        hiDisplayAppDBox(
+          ?name    'vfpErrDBox
+          ?dboxText sprintf(nil "Proposal %s partially applied; marked failed." proposalId)
+          ?buttonLayout 'Close
+        )
+        nil
+    )
+  )
+)

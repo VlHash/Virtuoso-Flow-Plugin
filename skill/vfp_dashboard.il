@@ -29,10 +29,11 @@ defun( vfpDashboardFields ()
     list( hiCreateMLTextField(?name 'vfpResVal ?value "No results yet." ?editable nil
                               ?hasVerticalScrollbar t)                                      10:188 450:120 )
 
-    list( hiCreateButton(?name 'vfpBtnConnect  ?buttonText "Connect"  ?callback "vfpMenuConnectCB()")   10:320 100:26 )
-    list( hiCreateButton(?name 'vfpBtnExport   ?buttonText "Export"   ?callback "vfpMenuExportCB()")    118:320 100:26 )
-    list( hiCreateButton(?name 'vfpBtnRefresh  ?buttonText "Refresh"  ?callback "vfpUpdateDashboard()") 226:320 100:26 )
-    list( hiCreateButton(?name 'vfpBtnRollback ?buttonText "Rollback" ?callback "vfpMenuRollbackCB()")  334:320 100:26 )
+    list( hiCreateButton(?name 'vfpBtnConnect   ?buttonText "Connect"   ?callback "vfpMenuConnectCB()")         10:320  96:26 )
+    list( hiCreateButton(?name 'vfpBtnExport    ?buttonText "Export"    ?callback "vfpMenuExportCB()")          114:320  96:26 )
+    list( hiCreateButton(?name 'vfpBtnRefresh   ?buttonText "Refresh"   ?callback "vfpUpdateDashboard()")       218:320  96:26 )
+    list( hiCreateButton(?name 'vfpBtnRollback  ?buttonText "Rollback"  ?callback "vfpMenuRollbackCB()")        322:320  96:26 )
+    list( hiCreateButton(?name 'vfpBtnProposals ?buttonText "Proposals" ?callback "vfpFetchPendingProposals()") 426:320 100:26 )
   )
 )
 

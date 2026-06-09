@@ -14,6 +14,7 @@ from . import __version__
 from .config import ensure_dirs, resolve_host, resolve_port, state_file
 from .design.context import ContextStore
 from .logging_config import get_logger
+from .proposal.manager import ProposalStore
 from .rpc import schemas
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
 from .rpc.transport import make_server
@@ -31,6 +32,7 @@ class Tunnel:
         self.started_ts = time.time()
         self.registry = Registry()
         self.contexts = ContextStore()
+        self.proposals = ProposalStore()
         self.dispatcher = Dispatcher()
         self.server = None
         self.log = get_logger()
@@ -47,6 +49,14 @@ class Tunnel:
         d.register("design.context.get", self._m_context_get)
         d.register("tunnel.status", self._m_tunnel_status)
         d.register("tunnel.shutdown", self._m_tunnel_shutdown)
+        # Proposal methods
+        d.register("proposal.create",      self._m_proposal_create)
+        d.register("proposal.list",        self._m_proposal_list)
+        d.register("proposal.get",         self._m_proposal_get)
+        d.register("proposal.approve",     self._m_proposal_approve)
+        d.register("proposal.reject",      self._m_proposal_reject)
+        d.register("proposal.mark_applied", self._m_proposal_mark_applied)
+        d.register("proposal.mark_failed", self._m_proposal_mark_failed)
 
     def _validate_or_raise(self, name, data):
         """Optional schema validation (no-op if jsonschema absent)."""
@@ -101,6 +111,85 @@ class Tunnel:
 
     def _m_context_get(self, params):
         return {"context": self.contexts.latest()}
+
+    # ---- proposal RPC methods ----
+    def _m_proposal_create(self, params):
+        data = params.get("proposal")
+        if not isinstance(data, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.proposal must be an object")
+        self._validate_or_raise("proposal", data)
+        try:
+            p = self.proposals.create(data)
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.log.info("proposal created: %s (%s)", p["proposal_id"], p.get("reason", "")[:60])
+        return {"proposal": p}
+
+    def _m_proposal_list(self, params):
+        status = params.get("status")
+        items = self.proposals.list(status=status)
+        return {"proposals": items, "count": len(items)}
+
+    def _m_proposal_get(self, params):
+        pid = params.get("proposal_id")
+        if not pid:
+            raise JsonRpcError(INVALID_PARAMS, "params.proposal_id required")
+        p = self.proposals.get(pid)
+        if p is None:
+            raise JsonRpcError(-32001, "unknown proposal_id: %s" % pid)
+        return {"proposal": p}
+
+    def _m_proposal_approve(self, params):
+        pid = params.get("proposal_id")
+        if not pid:
+            raise JsonRpcError(INVALID_PARAMS, "params.proposal_id required")
+        try:
+            p = self.proposals.approve(pid)
+        except KeyError as e:
+            raise JsonRpcError(-32001, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.log.info("proposal approved: %s", pid)
+        return {"proposal": p}
+
+    def _m_proposal_reject(self, params):
+        pid = params.get("proposal_id")
+        if not pid:
+            raise JsonRpcError(INVALID_PARAMS, "params.proposal_id required")
+        try:
+            p = self.proposals.reject(pid)
+        except KeyError as e:
+            raise JsonRpcError(-32001, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.log.info("proposal rejected: %s", pid)
+        return {"proposal": p}
+
+    def _m_proposal_mark_applied(self, params):
+        pid = params.get("proposal_id")
+        if not pid:
+            raise JsonRpcError(INVALID_PARAMS, "params.proposal_id required")
+        try:
+            p = self.proposals.mark_applied(pid)
+        except KeyError as e:
+            raise JsonRpcError(-32001, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.log.info("proposal applied: %s", pid)
+        return {"proposal": p}
+
+    def _m_proposal_mark_failed(self, params):
+        pid = params.get("proposal_id")
+        if not pid:
+            raise JsonRpcError(INVALID_PARAMS, "params.proposal_id required")
+        try:
+            p = self.proposals.mark_failed(pid)
+        except KeyError as e:
+            raise JsonRpcError(-32001, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.log.info("proposal failed: %s", pid)
+        return {"proposal": p}
 
     def _m_tunnel_status(self, params):
         return {

@@ -219,6 +219,80 @@ def cmd_context_import(args):
     return 0
 
 
+# ---- proposal -------------------------------------------------------
+def cmd_proposal_create(args):
+    try:
+        with open(args.file, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        return _fail("could not read %s: %s" % (args.file, e))
+    host, port = _endpoint(args)
+    try:
+        res = call("proposal.create", {"proposal": data}, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    p = res.get("proposal", {})
+    print("created  %s  status=%s" % (p.get("proposal_id"), p.get("status")))
+    return 0
+
+
+def cmd_proposal_list(args):
+    host, port = _endpoint(args)
+    params = {}
+    if args.status:
+        params["status"] = args.status
+    try:
+        res = call("proposal.list", params, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    items = res.get("proposals", [])
+    if not items:
+        print("No proposals found.")
+        return 0
+    for p in items:
+        cv = p.get("cellview", {})
+        print("%-26s  %-12s  %s/%s/%s  %s"
+              % (p.get("proposal_id"), p.get("status"),
+                 cv.get("lib", "?"), cv.get("cell", "?"), cv.get("view", "?"),
+                 p.get("created_at", "")))
+    return 0
+
+
+def cmd_proposal_show(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("proposal.get", {"proposal_id": args.proposal_id},
+                   host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    print(json.dumps(res.get("proposal", {}), indent=2))
+    return 0
+
+
+def cmd_proposal_approve(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("proposal.approve", {"proposal_id": args.proposal_id},
+                   host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    p = res.get("proposal", {})
+    print("approved  %s  status=%s" % (p.get("proposal_id"), p.get("status")))
+    return 0
+
+
+def cmd_proposal_reject(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("proposal.reject", {"proposal_id": args.proposal_id},
+                   host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    p = res.get("proposal", {})
+    print("rejected  %s  status=%s" % (p.get("proposal_id"), p.get("status")))
+    return 0
+
+
 # ---- parser ---------------------------------------------------------
 def build_parser():
     p = argparse.ArgumentParser(prog="vfp", description="VFP Tunnel CLI")
@@ -263,6 +337,30 @@ def build_parser():
     ping = groups.add_parser("ping", help="ping the tunnel")
     ping.add_argument("--session-id", dest="session_id")
     ping.set_defaults(func=cmd_ping)
+
+    proposal = groups.add_parser("proposal", help="manage design change proposals")
+    psub = proposal.add_subparsers(dest="cmd")
+
+    pc = psub.add_parser("create", help="create a proposal from a JSON file")
+    pc.add_argument("--file", required=True, help="path to proposal JSON file")
+    pc.set_defaults(func=cmd_proposal_create)
+
+    pl = psub.add_parser("list", help="list proposals")
+    pl.add_argument("--status", default=None,
+                    help="filter by status (pending/approved/rejected/applied/failed/rolled_back)")
+    pl.set_defaults(func=cmd_proposal_list)
+
+    ps = psub.add_parser("show", help="show a proposal in full")
+    ps.add_argument("proposal_id")
+    ps.set_defaults(func=cmd_proposal_show)
+
+    pa = psub.add_parser("approve", help="approve a pending proposal")
+    pa.add_argument("proposal_id")
+    pa.set_defaults(func=cmd_proposal_approve)
+
+    pr = psub.add_parser("reject", help="reject a pending proposal")
+    pr.add_argument("proposal_id")
+    pr.set_defaults(func=cmd_proposal_reject)
 
     return p
 

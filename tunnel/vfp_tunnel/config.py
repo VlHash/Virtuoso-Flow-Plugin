@@ -29,8 +29,12 @@ def sessions_dir():
     return vfp_home() / "sessions"
 
 
+def proposals_dir():
+    return vfp_home() / "proposals"
+
+
 def ensure_dirs():
-    for d in (vfp_home(), log_dir(), sessions_dir()):
+    for d in (vfp_home(), log_dir(), sessions_dir(), proposals_dir()):
         d.mkdir(parents=True, exist_ok=True)
 
 
