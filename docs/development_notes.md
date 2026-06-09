@@ -83,7 +83,12 @@ path (synchronous, no long-lived relay):
   returns the exit code; stdout is redirected to a temp file we then
   `read`). Public ops: `vfpConnect` (→ `session.register`, stores the
   session id), `vfpDisconnect`, `vfpPing`, `vfpTunnelStatus`, and a generic
-  `vfpRpcCall`.
+  `vfpRpcCall`. It invokes the system python at an **absolute path**
+  (`/usr/bin/python3`, override via `VFP_PYTHON`) with a **sanitized env**
+  (`env -u PYTHONHOME LD_LIBRARY_PATH=`): inside Virtuoso, PATH/LD_LIBRARY_PATH
+  point `python3` at Cadence's bundled interpreter
+  (`.../tools.lnx86/python/64bit`), which otherwise fails with
+  `undefined symbol: _Py_LegacyLocaleDetected`.
 - `skill/vfp_dashboard.il` — connection field now shows `Connected (s_…)`;
   `vfpDashboardSetResult` shows a one-line tunnel summary after connect.
 

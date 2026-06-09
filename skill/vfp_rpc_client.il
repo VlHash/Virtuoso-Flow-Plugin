@@ -21,7 +21,12 @@ defun( vfpRepoRoot ()
 
 defun( vfpTunnelDir () strcat(vfpRepoRoot() "/tunnel") )
 
-defun( vfpRpcPython () or(getShellEnvVar("VFP_PYTHON") "python3") )
+;; Absolute system python. Inside Virtuoso, PATH points `python3` at
+;; Cadence's bundled interpreter (e.g. .../tools.lnx86/python/64bit), whose
+;; libpython mismatches and fails with "undefined symbol:
+;; _Py_LegacyLocaleDetected". Use the system python explicitly; override
+;; with VFP_PYTHON if it lives elsewhere.
+defun( vfpRpcPython () or(getShellEnvVar("VFP_PYTHON") "/usr/bin/python3") )
 
 defun( vfpHelperOutDir ()
   let( (d)
@@ -46,7 +51,10 @@ defun( vfpRpcExec (method @optional (args nil))
     out  = sprintf(nil "%s/resp_%d.sx" vfpHelperOutDir() vfpRpcSeq())
     errf = strcat(vfpHelperOutDir() "/skillrpc.err")
     qargs = foreach(mapcar a args vfpShQuote(a))
-    cmd = sprintf(nil "PYTHONPATH=%s %s -m vfp_tunnel.skillrpc %s %s > %s 2>> %s"
+    ;; Sanitize the environment Cadence pollutes: drop PYTHONHOME and clear
+    ;; LD_LIBRARY_PATH so the system python uses its own libs, and pin
+    ;; PYTHONPATH to the tunnel package.
+    cmd = sprintf(nil "env -u PYTHONHOME LD_LIBRARY_PATH= PYTHONPATH=%s %s -m vfp_tunnel.skillrpc %s %s > %s 2>> %s"
                   vfpShQuote(vfpTunnelDir())
                   vfpShQuote(vfpRpcPython())
                   method
