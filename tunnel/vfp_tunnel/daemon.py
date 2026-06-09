@@ -12,7 +12,9 @@ import time
 
 from . import __version__
 from .config import ensure_dirs, resolve_host, resolve_port, state_file
+from .design.context import ContextStore
 from .logging_config import get_logger
+from .rpc import schemas
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
 from .rpc.transport import make_server
 from .session.registry import Registry
@@ -28,6 +30,7 @@ class Tunnel:
         self.port = port
         self.started_ts = time.time()
         self.registry = Registry()
+        self.contexts = ContextStore()
         self.dispatcher = Dispatcher()
         self.server = None
         self.log = get_logger()
@@ -40,8 +43,20 @@ class Tunnel:
         d.register("session.status", self._m_session_status)
         d.register("session.list", self._m_session_list)
         d.register("session.current", self._m_session_current)
+        d.register("design.context.update", self._m_context_update)
+        d.register("design.context.get", self._m_context_get)
         d.register("tunnel.status", self._m_tunnel_status)
         d.register("tunnel.shutdown", self._m_tunnel_shutdown)
+
+    def _validate_or_raise(self, name, data):
+        """Optional schema validation (no-op if jsonschema absent)."""
+        try:
+            schemas.validate(name, data)
+        except Exception as e:  # noqa: BLE001
+            if type(e).__name__ == "ValidationError":
+                raise JsonRpcError(INVALID_PARAMS, "%s failed schema validation: %s"
+                                   % (name, getattr(e, "message", e)))
+            raise
 
     # ---- RPC methods (each takes a params dict) ----
     def _m_session_register(self, params):
@@ -68,6 +83,24 @@ class Tunnel:
 
     def _m_session_current(self, params):
         return {"session": self.registry.public(self.registry.current())}
+
+    def _m_context_update(self, params):
+        context = params.get("context")
+        if not isinstance(context, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.context must be an object")
+        self._validate_or_raise("context", context)
+        sid = params.get("session_id")
+        if sid:
+            self.registry.touch(sid)
+        result = self.contexts.update(context)
+        cv = context.get("cellview", {})
+        self.log.info("context updated: %s/%s/%s (%d instances)",
+                      cv.get("lib"), cv.get("cell"), cv.get("view"),
+                      len(context.get("instances", [])))
+        return result
+
+    def _m_context_get(self, params):
+        return {"context": self.contexts.latest()}
 
     def _m_tunnel_status(self, params):
         return {

@@ -23,7 +23,7 @@ dependency.
 |---|-----------|--------|
 | 1 | Virtuoso plugin skeleton (menu, dashboard, lib/cell/view) | **done** |
 | 2 | VFP Tunnel (CLI, JSON-RPC, session) + SKILL bridge | **done** (Virtuoso Connect button needs a manual GUI test) |
-| 3 | Design context export | not started |
+| 3 | Design context export | **done** (Virtuoso "Export Context" needs a GUI test) |
 | 4 | Proposal workflow | not started |
 | 5 | Transactional parameter modification + rollback | not started |
 | 6 | Result + constraint display | not started |
@@ -102,6 +102,35 @@ To test in Virtuoso: on the server `scripts/vfp tunnel start` (binds
 `47891`), then reload the plugin and click *Connect* — the helper falls
 back to the default port, so it finds the tunnel even if Virtuoso's cwd
 differs from the daemon's.
+
+## Milestone 3 — design context export
+
+Extract the current schematic's instances/params/connectivity and send it
+to the tunnel as `design.context.update`.
+
+- `skill/vfp_context.il` — `vfpExtractDesignContext` walks `cv~>instances`
+  (name, master lib/cell/view, `instTerms`→net map, CDF params via
+  `cdfGetInstCDF`), `cv~>nets`, `cv~>terminals`; `vfpExportDesignContext`
+  writes the payload to a temp file and sends it via the helper.
+- `skill/vfp_utils.il` — a minimal JSON **encoder** (`vfpToJson` + tagged
+  `vfpJObj`/`vfpJArr` constructors, `vfpJsonEsc`, `vfpWriteFile`). SKILL has
+  no JSON, but encoding is easy and the helper decodes; objects/arrays are
+  tagged so object-vs-array-vs-null is unambiguous (booleans use
+  `'true`/`'false`; `nil` is JSON null).
+- `tunnel/vfp_tunnel/skillrpc.py` — new `--params-file` mode forwards a
+  large JSON payload (the context is too big for flat `--param`).
+- `tunnel/vfp_tunnel/design/context.py` + daemon methods
+  `design.context.update` / `design.context.get`; stores
+  `.vfp/contexts/latest_context.json` plus timestamped snapshots; validates
+  against `schemas/context.schema.json` when `jsonschema` is installed.
+- `tunnel/vfp_tunnel/cli.py` — `vfp context show|export|import`
+  (`import --file` loads a context for testing without Virtuoso).
+
+Verified: 28 pytest tests; the encoder algorithm emits JSON that conforms
+to the context schema; CLI `context import`/`show` and the helper
+`--params-file` path work against a live daemon on both Windows 3.14 and
+the server's Python 3.6.8. **Not yet tested:** the in-Virtuoso "Export
+Context" button (needs the GUI / a real schematic).
 
 ## SKILL implementation notes
 

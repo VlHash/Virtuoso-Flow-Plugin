@@ -68,6 +68,11 @@ def _endpoint(args):
 
 def _params(args):
     params = {}
+    if args.params_file:
+        with open(args.params_file, encoding="utf-8") as f:
+            loaded = json.load(f)
+        if isinstance(loaded, dict):
+            params.update(loaded)
     for kv in args.param:
         key, _, val = kv.partition("=")
         params[key] = val
@@ -86,6 +91,8 @@ def main(argv=None):
     ap.add_argument("method")
     ap.add_argument("--param", action="append", default=[])
     ap.add_argument("--param-json", dest="param_json", action="append", default=[])
+    ap.add_argument("--params-file", dest="params_file",
+                    help="JSON file whose object is merged into params (for large payloads)")
     args = ap.parse_args(argv)
 
     host, port = _endpoint(args)

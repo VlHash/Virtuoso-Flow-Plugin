@@ -72,3 +72,79 @@ defun( vfpToStr (x)
     ( t sprintf(nil "%L" x) )
   )
 )
+
+;; ---- Minimal JSON encoder ------------------------------------------
+;; SKILL has no JSON; we only need to *encode* (the helper decodes).
+;; Represent JSON objects/arrays with the tagged constructors below so
+;; object-vs-array-vs-null is unambiguous. Scalars map directly:
+;;   string -> "..."   integer/float -> number   t/'true -> true
+;;   'false -> false   nil -> null
+;; Booleans must use 'true / 'false (nil always means JSON null).
+
+defun( vfpJObj (@rest kv) cons('jobj kv) )    ; vfpJObj("k" v "k" v ...)
+defun( vfpJArr (@rest elems) cons('jarr elems) )
+
+defun( vfpJsonEsc (s)
+  let( (out i n ch)
+    out = ""
+    n = strlen(s)
+    for( i 1 n
+      ch = substring(s i 1)
+      out = strcat( out
+        cond(
+          ( equal(ch "\\") "\\\\" )
+          ( equal(ch "\"") "\\\"" )
+          ( equal(ch "\n") "\\n" )
+          ( equal(ch "\t") "\\t" )
+          ( t ch )
+        ))
+    )
+    out
+  )
+)
+
+defun( vfpToJson (x)
+  cond(
+    ( stringp(x)  strcat("\"" vfpJsonEsc(x) "\"") )
+    ( eq(x 'true) "true" )
+    ( eq(x 'false) "false" )
+    ( eq(x t)     "true" )
+    ( null(x)     "null" )
+    ( fixp(x)     sprintf(nil "%d" x) )
+    ( floatp(x)   sprintf(nil "%g" x) )
+    ( numberp(x)  sprintf(nil "%L" x) )
+    ( and(listp(x) eq(car(x) 'jobj))  vfpJObjToJson(cdr(x)) )
+    ( and(listp(x) eq(car(x) 'jarr))  vfpJArrToJson(cdr(x)) )
+    ( t  strcat("\"" vfpJsonEsc(sprintf(nil "%L" x)) "\"") )
+  )
+)
+
+defun( vfpJObjToJson (kv)
+  let( (parts rest)
+    parts = nil
+    rest = kv
+    while( rest
+      parts = cons( strcat(vfpToJson(car(rest)) ":" vfpToJson(cadr(rest))) parts )
+      rest = cddr(rest)
+    )
+    strcat("{" buildString(reverse(parts) ",") "}")
+  )
+)
+
+defun( vfpJArrToJson (elems)
+  strcat("[" buildString( foreach(mapcar e elems vfpToJson(e)) "," ) "]")
+)
+
+;; Write a string to a file (truncating). Returns t on success.
+defun( vfpWriteFile (path content)
+  let( (port)
+    port = outfile(path)
+    if( port
+      then fprintf(port "%s" content) close(port) t
+      else nil
+    )
+  )
+)
+
+;; Timestamp string for context payloads (any string is schema-valid).
+defun( vfpIsoTime () getCurrentTime() )

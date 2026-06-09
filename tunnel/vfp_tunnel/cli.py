@@ -2,7 +2,7 @@
 
 Subcommands talk to a running daemon over JSON-RPC; ``tunnel start`` spawns
 the daemon (``vfp_tunnel.daemon``) as a detached process. Pure stdlib,
-Python 3.6+. See project.md section 9.1 for the full planned command set.
+Python 3.6+. See the tunnel README for the command set.
 """
 
 import argparse
@@ -11,6 +11,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 from . import __version__
 from .config import (ensure_dirs, log_dir, resolve_host, resolve_port,
@@ -173,6 +174,51 @@ def cmd_ping(args):
     return 0
 
 
+# ---- context --------------------------------------------------------
+def cmd_context_show(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("design.context.get", {}, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    ctx = res.get("context")
+    if not ctx:
+        print("No design context stored yet.")
+        return 0
+    print(json.dumps(ctx, indent=2))
+    return 0
+
+
+def cmd_context_export(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("design.context.get", {}, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    ctx = res.get("context")
+    if not ctx:
+        return _fail("no design context stored yet")
+    out = args.out or "context.json"
+    Path(out).write_text(json.dumps(ctx, indent=2), encoding="utf-8")
+    print("wrote %s" % out)
+    return 0
+
+
+def cmd_context_import(args):
+    try:
+        with open(args.file, encoding="utf-8") as f:
+            context = json.load(f)
+    except (OSError, ValueError) as e:
+        return _fail("could not read %s: %s" % (args.file, e))
+    host, port = _endpoint(args)
+    try:
+        res = call("design.context.update", {"context": context}, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    print("context stored: %s" % res.get("path"))
+    return 0
+
+
 # ---- parser ---------------------------------------------------------
 def build_parser():
     p = argparse.ArgumentParser(prog="vfp", description="VFP Tunnel CLI")
@@ -202,6 +248,17 @@ def build_parser():
     ssub.add_parser("list", help="list sessions").set_defaults(func=cmd_session_list)
     ssub.add_parser("current", help="show the most recent session").set_defaults(
         func=cmd_session_current)
+
+    context = groups.add_parser("context", help="design context")
+    csub = context.add_subparsers(dest="cmd")
+    csub.add_parser("show", help="print the latest stored context").set_defaults(
+        func=cmd_context_show)
+    ce = csub.add_parser("export", help="write the latest context to a file")
+    ce.add_argument("--out", default=None)
+    ce.set_defaults(func=cmd_context_export)
+    ci = csub.add_parser("import", help="load a context from a JSON file (testing)")
+    ci.add_argument("--file", required=True)
+    ci.set_defaults(func=cmd_context_import)
 
     ping = groups.add_parser("ping", help="ping the tunnel")
     ping.add_argument("--session-id", dest="session_id")
