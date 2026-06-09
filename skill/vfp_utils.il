@@ -62,3 +62,13 @@ defun( vfpCvId (cv)
     else "(none)"
   )
 )
+
+;; Coerce any value to a plain string for "%s" formatting (numbers print
+;; bare, strings pass through, nil -> "").
+defun( vfpToStr (x)
+  cond(
+    ( stringp(x) x )
+    ( null(x) "" )
+    ( t sprintf(nil "%L" x) )
+  )
+)

@@ -22,7 +22,7 @@ dependency.
 | # | Milestone | Status |
 |---|-----------|--------|
 | 1 | Virtuoso plugin skeleton (menu, dashboard, lib/cell/view) | **done** |
-| 2 | VFP Tunnel skeleton (CLI, JSON-RPC, session) | **tunnel done**; SKILL rpc client (M2b) next |
+| 2 | VFP Tunnel (CLI, JSON-RPC, session) + SKILL bridge | **done** (Virtuoso Connect button needs a manual GUI test) |
 | 3 | Design context export | not started |
 | 4 | Proposal workflow | not started |
 | 5 | Transactional parameter modification + rollback | not started |
@@ -63,14 +63,40 @@ Default endpoint `127.0.0.1:47891` (override via `--host/--port` or
 `tunnel start` spawns the daemon detached (cross-platform: `start_new_session`
 on POSIX, `DETACHED_PROCESS` on Windows) and polls `tunnel.status` until ready.
 
-Verified: `pytest tests/` (15 passing) on Windows 3.14, plus a full CLI
+Verified: `pytest tests/` (20 passing) on Windows 3.14, plus a full CLI
 smoke test (start→status→register→ping→list→stop) on **both** Windows 3.14
 and the server's Python 3.6.8.
 
-**Next (M2b):** SKILL-side `vfp_rpc_client.il` — speak the same
-newline-framed JSON-RPC from inside Virtuoso (likely via an `ipcBeginProcess`
-helper, since base SKILL has no raw TCP sockets) and wire the dashboard
-Connect/Refresh to `session.register` / `tunnel.status`.
+## Milestone 2b — SKILL ↔ tunnel bridge
+
+Base SKILL has no raw TCP sockets and no JSON parser, so the plugin talks
+to the tunnel through a helper, chosen for being the simplest reliable MVP
+path (synchronous, no long-lived relay):
+
+- `tunnel/vfp_tunnel/skillrpc.py` — runs one JSON-RPC call and prints the
+  response as a **SKILL s-expression** (`(t <result>)` / `(nil <error>)`),
+  so SKILL parses it with `read` (no JSON parser, no `evalstring`). For
+  `session.register` it wraps flat `--param k=v` into a `client` object so
+  SKILL never builds JSON. Resolves the endpoint from the daemon state file
+  or the default `127.0.0.1:47891`.
+- `skill/vfp_rpc_client.il` — `vfpRpcExec` shells out via `system()` (which
+  returns the exit code; stdout is redirected to a temp file we then
+  `read`). Public ops: `vfpConnect` (→ `session.register`, stores the
+  session id), `vfpDisconnect`, `vfpPing`, `vfpTunnelStatus`, and a generic
+  `vfpRpcCall`.
+- `skill/vfp_dashboard.il` — connection field now shows `Connected (s_…)`;
+  `vfpDashboardSetResult` shows a one-line tunnel summary after connect.
+
+Verified end-to-end on the server (3.6.8): the helper emits correct
+s-expressions for `tunnel.status`, `session.register`, `session.ping`, a
+method-not-found error, and an unreachable-tunnel error. **Not yet tested:**
+clicking *Connect* inside Virtuoso (needs the GUI; the SKILL parsing path
+is exercised only there).
+
+To test in Virtuoso: on the server `scripts/vfp tunnel start` (binds
+`47891`), then reload the plugin and click *Connect* — the helper falls
+back to the default port, so it finds the tunnel even if Virtuoso's cwd
+differs from the daemon's.
 
 ## SKILL implementation notes
 
