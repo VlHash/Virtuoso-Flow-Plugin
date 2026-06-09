@@ -64,7 +64,7 @@ and the proposal / transaction / result milestones are scaffolded but not
 yet implemented — see the status table in
 [`docs/development_notes.md`](docs/development_notes.md).
 
-##Thanks
+## Thanks
 
 [`Virtuoso CLI`](https://github.com/deanyou/virtuoso-cli): A full Rust rewrite and major extension of VBL.
 [`Virtuoso-Bridge-Lite(VBL)`](https://github.com/Arcadia-1/virtuoso-bridge-lite): LLM Agents drive Cadence Virtuoso instances.
