@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Run the VFP Tunnel CLI without installing the package (e.g. on the design
-# server with the system python3). Adds tunnel/ to PYTHONPATH so the
-# detached daemon subprocess can import vfp_tunnel too.
+# server with the system python3).
 #
 #   scripts/vfp tunnel start
 #   scripts/vfp tunnel status
 #   scripts/vfp session list
 #
-# Override the interpreter with VFP_PYTHON (default: python3).
+# Inside a Cadence-sourced shell, PATH/LD_LIBRARY_PATH point `python3` at
+# Cadence's bundled interpreter, which fails with:
+#   python3: symbol lookup error: undefined symbol: _Py_LegacyLocaleDetected
+# So we pin the system python and clear the polluting environment, matching
+# what the SKILL helper (skill/vfp_rpc_client.il) does. Override the
+# interpreter with VFP_PYTHON (default: /usr/bin/python3).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PYTHONPATH="$here/tunnel${PYTHONPATH:+:$PYTHONPATH}"
-exec "${VFP_PYTHON:-python3}" -m vfp_tunnel.cli "$@"
+export PYTHONPATH="$here/tunnel"
+unset PYTHONHOME || true
+export LD_LIBRARY_PATH=
+exec "${VFP_PYTHON:-/usr/bin/python3}" -m vfp_tunnel.cli "$@"
