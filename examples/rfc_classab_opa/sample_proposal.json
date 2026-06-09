@@ -1,0 +1,34 @@
+{
+  "schema_version": "0.1",
+  "proposal_id": "p_20260609_001",
+  "created_by": "agent",
+  "status": "pending",
+  "cellview": {
+    "lib": "RFCOPA",
+    "cell": "XOPA",
+    "view": "schematic"
+  },
+  "reason": "Phase margin is too high. Reduce Miller compensation capacitance to increase bandwidth and lower excessive stability margin.",
+  "changes": [
+    {
+      "type": "set_instance_param",
+      "instance": "C0",
+      "param": "c",
+      "before": "12f",
+      "after": "6f"
+    },
+    {
+      "type": "set_instance_param",
+      "instance": "RZC0",
+      "param": "r",
+      "before": "10k",
+      "after": "4.7k"
+    }
+  ],
+  "expected_effect": {
+    "PM": "decrease",
+    "UGB": "increase",
+    "risk": "May reduce stability margin too much if compensation is reduced aggressively."
+  },
+  "requires_user_approval": true
+}

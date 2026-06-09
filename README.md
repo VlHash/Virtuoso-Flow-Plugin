@@ -28,3 +28,38 @@ The system is split into two cooperating components:
    An external bridge daemon responsible for AI-agent interfaces, JSON-RPC/MCP/CLI communication, task orchestration, simulation result parsing, constraint evaluation, logging, artifact management, and transaction persistence.
 
 Together, they provide a controlled bridge between human designers, Virtuoso design data, simulation infrastructure, and AI-assisted automation tools.
+
+## Repository Layout
+
+```text
+skill/      Virtuoso Flow Plugin — SKILL modules (the in-Virtuoso plugin)
+tunnel/     VFP Tunnel — Python bridge daemon + `vfp` CLI (skeleton)
+schemas/    Canonical data contract shared by both sides
+examples/   Worked examples (e.g. RFC Class-AB op-amp fixtures)
+scripts/    Convenience loaders / helpers
+docs/       Project docs + bundled Cadence IC23.1 SKILL reference
+tests/      Python tests for VFP Tunnel
+project.md  Full project plan, milestones, and schemas
+```
+
+Both components live in one repository (monorepo); see
+[`docs/development_notes.md`](docs/development_notes.md) for the rationale.
+
+## Quick Start (Milestone 1 — plugin skeleton)
+
+In the Virtuoso CIW:
+
+```lisp
+load("F:/VBL/Virtuoso-Flow-Plugin/scripts/load_vfp.il")
+```
+
+A **Virtuoso Flow** menu appears; `Open Dashboard` shows connection
+status and the current library/cell/view. Full usage:
+[`docs/plugin_usage.md`](docs/plugin_usage.md).
+
+## Status
+
+Milestone 1 (menu + dashboard + lib/cell/view) is implemented. VFP Tunnel
+and the proposal / transaction / result milestones are scaffolded but not
+yet implemented — see the status table in
+[`docs/development_notes.md`](docs/development_notes.md).

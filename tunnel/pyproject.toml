@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vfp-tunnel"
+version = "0.1.0"
+description = "VFP Tunnel — external bridge daemon for the Virtuoso Flow Plugin"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "see repository LICENSE" }
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+vfp = "vfp_tunnel.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vfp_tunnel*"]

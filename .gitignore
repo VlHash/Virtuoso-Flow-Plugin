@@ -1,0 +1,34 @@
+# VFP runtime artifacts
+.vfp/
+runs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# SKILL / Cadence
+*.cdslck
+*.cdslock
+CDS.log
+cds.lib.bak
+
+# Bundled Cadence IC23.1 docs — proprietary; large. Authoritative full
+# copy lives on the design server (see AGENTS.md). Kept locally only.
+docs/IC231_gui_plugin_docs/
+
+# Local archives / snapshots
+*.zip
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

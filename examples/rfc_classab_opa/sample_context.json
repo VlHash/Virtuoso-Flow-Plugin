@@ -1,0 +1,42 @@
+{
+  "schema_version": "0.1",
+  "source": "virtuoso-flow-plugin",
+  "timestamp": "2026-06-09T00:00:00",
+  "cellview": {
+    "lib": "RFCOPA",
+    "cell": "XOPA",
+    "view": "schematic"
+  },
+  "instances": [
+    {
+      "name": "M3",
+      "master": {
+        "lib": "tsmcN65",
+        "cell": "pmos",
+        "view": "symbol"
+      },
+      "params": {
+        "w": "1u",
+        "l": "120n",
+        "m": "4",
+        "nf": "2"
+      },
+      "nets": {
+        "G": "Vbin",
+        "D": "net_tail",
+        "S": "VDD",
+        "B": "VDD"
+      }
+    }
+  ],
+  "ports": [],
+  "nets": [],
+  "ade": {
+    "available": true,
+    "active_test": "openloop_stb",
+    "tests": ["dcop", "openloop_stb", "tran_sc"]
+  },
+  "last_result": {
+    "available": false
+  }
+}
