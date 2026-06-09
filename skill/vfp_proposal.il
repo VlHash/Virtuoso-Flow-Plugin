@@ -95,6 +95,9 @@ defun( vfpShowProposal (proposal)
         list( hiCreateButton(?name 'vfpPropReject  ?buttonText "Reject"
                 ?callback sprintf(nil "vfpRejectProposal(\"%s\")" pid))
               120:220 100:28 )
+        list( hiCreateButton(?name 'vfpPropApply   ?buttonText "Apply"
+                ?callback sprintf(nil "vfpApplyProposal(\"%s\")" pid))
+              230:220 100:28 )
       )
       ?buttonLayout 'Close
     )
@@ -169,89 +172,43 @@ defun( vfpRejectProposal (proposalId)
 ;; ---- vfpApplyProposal -----------------------------------------------
 ;; Actually sets the instance parameters in the open schematic, then
 ;; calls proposal.mark_applied (or proposal.mark_failed on error).
+;; Apply an *approved* proposal. The actual schematic edit + reversible
+;; transaction recording live in vfp_transaction.il (vfpApplyTransaction);
+;; this function fetches the proposal and enforces the approval gate.
 defun( vfpApplyProposal (proposalId)
-  let( (ret ok payload proposal changes cv lib cell cv_obj inst param after ok2 ret2)
+  prog( (ret ok payload proposal status)
     ;; 1. Fetch the full proposal record.
     ret     = vfpRpcExec("proposal.get"
                 list("--param" sprintf(nil "proposal_id=%s" proposalId)))
     ok      = car(ret)
     payload = cadr(ret)
-    when( null(ok)
+    unless( ok
       hiDisplayAppDBox(
         ?name    'vfpErrDBox
         ?dboxText sprintf(nil "Apply failed (get):\n%s" vfpFmtError(payload))
-        ?buttonLayout 'Close
-      )
+        ?buttonLayout 'Close)
       return(nil)
     )
 
     proposal = vfpAlistGet(payload "proposal")
-    changes  = vfpAlistGet(proposal "changes")
-    cv       = vfpAlistGet(proposal "cellview")
-    lib      = vfpAlistGet(cv "lib")
-    cell     = vfpAlistGet(cv "cell")
+    status   = vfpAlistGet(proposal "status")
 
-    ;; 2. Open (or locate) the cellview.
-    cv_obj = dbOpenCellViewByType(lib cell "schematic" "schematic" "r")
-    unless( cv_obj
+    ;; 2. Enforce the approval gate: only approved proposals may be applied.
+    unless( equal(status "approved")
       hiDisplayAppDBox(
-        ?name    'vfpErrDBox
-        ?dboxText sprintf(nil "Cannot open schematic %s/%s" lib cell)
-        ?buttonLayout 'Close
-      )
-      ;; Mark as failed in the tunnel.
-      vfpRpcExec("proposal.mark_failed"
-        list("--param" sprintf(nil "proposal_id=%s" proposalId)))
+        ?name    'vfpInfoDBox
+        ?dboxText sprintf(nil "Proposal %s is '%s'.\nApprove it before applying."
+                    proposalId status)
+        ?buttonLayout 'Close)
       return(nil)
     )
 
-    ;; 3. Apply each change (set_instance_param).
-    ok2 = t
-    foreach( ch changes
-      inst  = vfpAlistGet(ch "instance")
-      param = vfpAlistGet(ch "param")
-      after = vfpAlistGet(ch "after")
-      let( (instObj)
-        instObj = car(setof(i cv_obj~>instances i~>name == inst))
-        if( null(instObj)
-          then
-            vfpLog(sprintf(nil "apply: instance %s not found; skipping" inst))
-          else
-            errset(
-              iProp(instObj param after)
-              vfpLog(sprintf(nil "apply error on %s.%s" inst param))
-              ok2 = nil
-            )
-        )
+    ;; 3. Apply as a reversible transaction.
+    return(
+      if( isCallable('vfpApplyTransaction)
+        then vfpApplyTransaction(proposal)
+        else vfpNotImplemented("vfpApplyTransaction")
       )
-    )
-
-    ;; 4. Save and close.
-    dbSave(cv_obj)
-    dbClose(cv_obj)
-
-    ;; 5. Mark the proposal as applied or failed.
-    if( ok2
-      then
-        ret2 = vfpRpcExec("proposal.mark_applied"
-                 list("--param" sprintf(nil "proposal_id=%s" proposalId)))
-        vfpLog(sprintf(nil "proposal %s applied" proposalId))
-        hiDisplayAppDBox(
-          ?name    'vfpInfoDBox
-          ?dboxText sprintf(nil "Proposal %s applied successfully." proposalId)
-          ?buttonLayout 'Close
-        )
-        vfpFetchPendingProposals()
-        t
-      else
-        vfpRpcExec("proposal.mark_failed"
-          list("--param" sprintf(nil "proposal_id=%s" proposalId)))
-        hiDisplayAppDBox(
-          ?name    'vfpErrDBox
-          ?dboxText sprintf(nil "Proposal %s partially applied; marked failed." proposalId)
-          ?buttonLayout 'Close
-        )
-        nil
     )
   )
 )

@@ -108,8 +108,20 @@ defun( vfpMenuApplyCB ()
       vfpNotImplemented("Apply Approved Proposal") )
 )
 defun( vfpMenuRollbackCB ()
-  if( isCallable('vfpRollbackTransaction) vfpNotImplemented("Rollback Last Transaction")
-      vfpNotImplemented("Rollback Last Transaction") )
+  let( (tid)
+    if( and(isCallable('vfpGetLastTransaction) isCallable('vfpRollbackTransaction))
+      then
+        tid = vfpGetLastTransaction()
+        if( tid
+          then vfpRollbackTransaction(tid)
+          else
+            hiDisplayAppDBox(?name 'vfpInfoDBox
+              ?dboxText "No applied transaction to roll back."
+              ?buttonLayout 'Close)
+        )
+      else vfpNotImplemented("Rollback Last Transaction")
+    )
+  )
 )
 defun( vfpMenuRunTestCB ()
   if( isCallable('vfpRunAdeTest) vfpNotImplemented("Run Selected ADE Test (select one first)")

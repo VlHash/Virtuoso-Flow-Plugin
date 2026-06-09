@@ -33,14 +33,21 @@ reversible transaction.
 | 1 | Plugin skeleton (menu, dashboard, lib/cell/view) | **done** |
 | 2 | Tunnel (CLI, JSON-RPC, sessions) + SKILL bridge | **done** |
 | 3 | Design context export | **done** |
-| 4 | Proposal workflow | not started |
-| 5 | Transactional parameter modification + rollback | not started |
+| 4 | Proposal workflow | **done** |
+| 5 | Transactional parameter modification + rollback | **done** |
 | 6 | Result + constraint display | not started |
 | 7 | ADE/Spectre integration | not started |
 
-**Verified outside the GUI:** 28 pytest tests; full CLI + helper smoke
-tests on Windows (3.14) and the design server (Python 3.6.8); the SKILL
-JSON encoder emits schema-conforming context.
+**Verified outside the GUI:** 63 pytest tests (4 skip without `jsonschema`);
+full CLI + helper smoke tests on the design server (Python 3.6.8); the SKILL
+JSON encoder emits schema-conforming context; proposal + transaction
+lifecycles verified end-to-end over JSON-RPC via the `vfp` CLI.
+
+**Pending manual GUI checks for M4/M5** (need a real Virtuoso session): the
+SKILL apply/rollback path (`vfpApplyProposal` → `vfpApplyTransaction` →
+`vfpRollbackTransaction`) reads/writes CDF instance params via
+`cdfGetInstCDF` + `dbSave`; confirm the exact CDF calls against IC23.1 and
+that before/after capture + rollback restore the original values.
 
 **Pending manual GUI checks** (need a real Virtuoso session; an agent
 cannot drive the GUI):
@@ -174,7 +181,7 @@ guessing signatures.
       schematic; capture any CIW errors.
 - [ ] (Optional) Open a PR `feat/vfp-mvp` → `main` summarizing M1–M3.
 
-### Milestone 4 — Proposal workflow
+### Milestone 4 — Proposal workflow ✅ done
 - Tunnel: `proposal/{model,manager,policy}.py`; methods `proposal.create`,
   `proposal.list`, `proposal.get`, `proposal.approve`, `proposal.reject`,
   `proposal.mark_applied`, `proposal.mark_failed`; store under
@@ -186,20 +193,29 @@ guessing signatures.
 - Acceptance: `vfp proposal create --file examples/rfc_classab_opa/sample_proposal.json`
   then the proposal shows in the Virtuoso dashboard.
 
-### Milestone 5 — Transactional parameter modification + rollback
-- SKILL (`vfp_schematic.il` + `vfp_transaction.il` stubs): read a param via
-  CDF, **capture before**, set the param (`cdfgData` / `hiSetInstHeaderProp`
-  or schematic prop API — verify against the IC23.1 docs), `dbSave` the
-  cellview, **capture after**; build a transaction per
-  `schemas/transaction.schema.json`; `vfpRollbackTransaction` restores
-  `before`.
-- Tunnel: `transaction/{model,manager,rollback}.py`; methods
-  `transaction.create/list/get/rollback/mark_rolled_back`; store under
-  `.vfp/transactions/`.
-- Enforce `permissions.allow_modify`/`deny_modify` from the constraint file
-  before any change. **No unrestricted `evalstring` to agents.**
-- Acceptance: approve a one-cap change → schematic updates → transaction
-  saved → rollback restores the original value.
+### Milestone 5 — Transactional parameter modification + rollback ✅ done
+- SKILL: `vfp_schematic.il` reads/writes CDF instance params
+  (`cdfGetInstCDF` → iterate `parameters` → set `value` → `dbSave`);
+  `vfp_transaction.il` captures **before**, applies, captures **after**,
+  records the transaction, and `vfpRollbackTransaction` restores `before`.
+  `vfpApplyProposal` is gated on `approved` and delegates to
+  `vfpApplyTransaction`; dashboard/menu **Rollback** rolls back the last
+  applied transaction. *(SKILL CDF calls still need a live-GUI confirm.)*
+- Tunnel: `transaction/{model,manager,permissions}.py`; methods
+  `transaction.create/list/get/rollback/mark_rolled_back/mark_failed`; store
+  under `.vfp/transactions/`. `transaction.create` links the proposal
+  (approved → applied); `mark_rolled_back` cascades (applied → rolled_back).
+  CLI: `vfp transaction list | show`.
+- Permission enforcement: `transaction.permissions` matches
+  `<instance>.<param>` against `allow_modify`/`deny_modify` globs (deny
+  wins); `transaction.create` rejects denied changes (code -32002). The
+  tunnel holds `self.permissions` (default empty = allow-all); M6's
+  constraint engine will populate it from the constraint file. **No
+  unrestricted `evalstring` to agents.**
+- Acceptance (CLI, over JSON-RPC): create+approve a proposal → record a
+  transaction (proposal → applied) → `transaction.rollback` returns the
+  before-recipe → `mark_rolled_back` (proposal → rolled_back). 18 unit/RPC
+  tests cover model, permissions, store, and linkage.
 
 ### Milestone 6 — Result + constraint display
 - Tunnel: `sim/{parser,metrics}.py`, `constraints/engine.py`; methods

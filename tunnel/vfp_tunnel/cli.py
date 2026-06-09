@@ -293,6 +293,40 @@ def cmd_proposal_reject(args):
     return 0
 
 
+# ---- transaction ----------------------------------------------------
+def cmd_transaction_list(args):
+    host, port = _endpoint(args)
+    params = {}
+    if args.status:
+        params["status"] = args.status
+    try:
+        res = call("transaction.list", params, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    items = res.get("transactions", [])
+    if not items:
+        print("No transactions found.")
+        return 0
+    for t in items:
+        cv = t.get("cellview", {})
+        print("%-26s  %-12s  %s/%s/%s  proposal=%s  %s"
+              % (t.get("transaction_id"), t.get("status"),
+                 cv.get("lib", "?"), cv.get("cell", "?"), cv.get("view", "?"),
+                 t.get("proposal_id", "-"), t.get("timestamp", "")))
+    return 0
+
+
+def cmd_transaction_show(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("transaction.get", {"transaction_id": args.transaction_id},
+                   host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    print(json.dumps(res.get("transaction", {}), indent=2))
+    return 0
+
+
 # ---- parser ---------------------------------------------------------
 def build_parser():
     p = argparse.ArgumentParser(prog="vfp", description="VFP Tunnel CLI")
@@ -361,6 +395,17 @@ def build_parser():
     pr = psub.add_parser("reject", help="reject a pending proposal")
     pr.add_argument("proposal_id")
     pr.set_defaults(func=cmd_proposal_reject)
+
+    transaction = groups.add_parser("transaction",
+                                    help="inspect applied-change transactions")
+    tsub2 = transaction.add_subparsers(dest="cmd")
+    tl = tsub2.add_parser("list", help="list transactions")
+    tl.add_argument("--status", default=None,
+                    help="filter by status (applied/failed/rolled_back)")
+    tl.set_defaults(func=cmd_transaction_list)
+    tshow = tsub2.add_parser("show", help="show a transaction in full")
+    tshow.add_argument("transaction_id")
+    tshow.set_defaults(func=cmd_transaction_show)
 
     return p
 

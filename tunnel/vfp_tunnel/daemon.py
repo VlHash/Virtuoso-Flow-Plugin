@@ -19,6 +19,13 @@ from .rpc import schemas
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
 from .rpc.transport import make_server
 from .session.registry import Registry
+from .transaction import permissions as txn_permissions
+from .transaction.manager import TransactionStore
+from .transaction.model import make_transaction
+
+# Custom JSON-RPC error codes (server-defined range -32000..-32099).
+UNKNOWN_ID = -32001
+PERMISSION_DENIED = -32002
 
 
 def _iso(ts):
@@ -33,6 +40,10 @@ class Tunnel:
         self.registry = Registry()
         self.contexts = ContextStore()
         self.proposals = ProposalStore()
+        self.transactions = TransactionStore()
+        # Default modify-permissions (empty => allow all). Milestone 6's
+        # constraint engine will populate this from the constraint file.
+        self.permissions = {}
         self.dispatcher = Dispatcher()
         self.server = None
         self.log = get_logger()
@@ -57,6 +68,13 @@ class Tunnel:
         d.register("proposal.reject",      self._m_proposal_reject)
         d.register("proposal.mark_applied", self._m_proposal_mark_applied)
         d.register("proposal.mark_failed", self._m_proposal_mark_failed)
+        # Transaction methods
+        d.register("transaction.create",          self._m_transaction_create)
+        d.register("transaction.list",            self._m_transaction_list)
+        d.register("transaction.get",             self._m_transaction_get)
+        d.register("transaction.rollback",        self._m_transaction_rollback)
+        d.register("transaction.mark_rolled_back", self._m_transaction_mark_rolled_back)
+        d.register("transaction.mark_failed",     self._m_transaction_mark_failed)
 
     def _validate_or_raise(self, name, data):
         """Optional schema validation (no-op if jsonschema absent)."""
@@ -190,6 +208,116 @@ class Tunnel:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal failed: %s", pid)
         return {"proposal": p}
+
+    # ---- transaction RPC methods ----
+    def _m_transaction_create(self, params):
+        data = params.get("transaction")
+        if not isinstance(data, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.transaction must be an object")
+
+        # Build the complete record first (assigns transaction_id), then
+        # enforce modify-permissions and validate against the schema.
+        candidate = make_transaction(data)
+
+        perms = params.get("permissions") or self.permissions or {}
+        targets = candidate.get("after") or candidate.get("before") or []
+        viol = txn_permissions.violations(
+            targets, perms.get("allow_modify"), perms.get("deny_modify"))
+        if viol:
+            raise JsonRpcError(
+                PERMISSION_DENIED,
+                "modify not permitted for: %s"
+                % ", ".join(v["target"] for v in viol),
+                data=viol)
+
+        self._validate_or_raise("transaction", candidate)
+        try:
+            txn = self.transactions.add(candidate)
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+
+        # Link to the originating proposal: an approved proposal becomes
+        # applied once its transaction is recorded.
+        pid = txn.get("proposal_id")
+        if pid:
+            p = self.proposals.get(pid)
+            if p is not None and p.get("status") == "approved":
+                try:
+                    self.proposals.mark_applied(pid)
+                except (KeyError, ValueError):
+                    pass
+        self.log.info("transaction created: %s (proposal %s, %d change(s))",
+                      txn["transaction_id"], pid, len(txn.get("after", [])))
+        return {"transaction": txn}
+
+    def _m_transaction_list(self, params):
+        status = params.get("status")
+        items = self.transactions.list(status=status)
+        return {"transactions": items, "count": len(items)}
+
+    def _m_transaction_get(self, params):
+        tid = params.get("transaction_id")
+        if not tid:
+            raise JsonRpcError(INVALID_PARAMS, "params.transaction_id required")
+        t = self.transactions.get(tid)
+        if t is None:
+            raise JsonRpcError(UNKNOWN_ID, "unknown transaction_id: %s" % tid)
+        return {"transaction": t}
+
+    def _m_transaction_rollback(self, params):
+        """Pre-flight a rollback: validate state and return the restore recipe.
+
+        The actual schematic restore happens in SKILL; it confirms with
+        ``transaction.mark_rolled_back`` afterwards. This keeps the on-disk
+        status truthful if the GUI restore fails midway.
+        """
+        tid = params.get("transaction_id")
+        if not tid:
+            raise JsonRpcError(INVALID_PARAMS, "params.transaction_id required")
+        t = self.transactions.get(tid)
+        if t is None:
+            raise JsonRpcError(UNKNOWN_ID, "unknown transaction_id: %s" % tid)
+        if t.get("status") != "applied":
+            raise JsonRpcError(
+                INVALID_PARAMS,
+                "transaction %s is %s, only 'applied' can be rolled back"
+                % (tid, t.get("status")))
+        return {"transaction": t, "restore": t.get("before", [])}
+
+    def _m_transaction_mark_rolled_back(self, params):
+        tid = params.get("transaction_id")
+        if not tid:
+            raise JsonRpcError(INVALID_PARAMS, "params.transaction_id required")
+        try:
+            t = self.transactions.mark_rolled_back(tid)
+        except KeyError as e:
+            raise JsonRpcError(UNKNOWN_ID, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        # Reflect the rollback on the originating proposal.
+        pid = t.get("proposal_id")
+        if pid:
+            p = self.proposals.get(pid)
+            if p is not None and p.get("status") == "applied":
+                try:
+                    self.proposals.mark_rolled_back(pid)
+                except (KeyError, ValueError):
+                    pass
+        self.log.info("transaction rolled back: %s", tid)
+        return {"transaction": t}
+
+    def _m_transaction_mark_failed(self, params):
+        tid = params.get("transaction_id")
+        if not tid:
+            raise JsonRpcError(INVALID_PARAMS, "params.transaction_id required")
+        try:
+            t = self.transactions.mark_failed(tid)
+        except KeyError as e:
+            raise JsonRpcError(UNKNOWN_ID, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.log.info("transaction marked failed: %s", tid)
+        return {"transaction": t}
 
     def _m_tunnel_status(self, params):
         return {
