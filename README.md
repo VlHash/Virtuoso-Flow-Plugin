@@ -115,7 +115,7 @@ scripts/vfp tunnel status
 Then load the plugin in Virtuoso:
 
 ```lisp
-load("F:/VBL/Virtuoso-Flow-Plugin/scripts/load_vfp.il")
+load("$PATH/Virtuoso-Flow-Plugin/scripts/load_vfp.il")
 ```
 
 A **Virtuoso Flow** menu appears in the CIW and schematic windows. Choose
