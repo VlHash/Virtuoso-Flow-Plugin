@@ -14,11 +14,14 @@ from . import __version__
 from .config import ensure_dirs, resolve_host, resolve_port, state_file
 from .design.context import ContextStore
 from .logging_config import get_logger
+from .constraints import engine as constraint_engine
 from .proposal.manager import ProposalStore
 from .rpc import schemas
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
 from .rpc.transport import make_server
 from .session.registry import Registry
+from .sim.manager import ResultStore
+from .sim.metrics import make_result
 from .transaction import permissions as txn_permissions
 from .transaction.manager import TransactionStore
 from .transaction.model import make_transaction
@@ -41,6 +44,7 @@ class Tunnel:
         self.contexts = ContextStore()
         self.proposals = ProposalStore()
         self.transactions = TransactionStore()
+        self.results = ResultStore()
         # Default modify-permissions (empty => allow all). Milestone 6's
         # constraint engine will populate this from the constraint file.
         self.permissions = {}
@@ -75,6 +79,10 @@ class Tunnel:
         d.register("transaction.rollback",        self._m_transaction_rollback)
         d.register("transaction.mark_rolled_back", self._m_transaction_mark_rolled_back)
         d.register("transaction.mark_failed",     self._m_transaction_mark_failed)
+        # Result / constraint methods
+        d.register("result.update",   self._m_result_update)
+        d.register("result.latest",   self._m_result_latest)
+        d.register("constraint.check", self._m_constraint_check)
 
     def _validate_or_raise(self, name, data):
         """Optional schema validation (no-op if jsonschema absent)."""
@@ -318,6 +326,42 @@ class Tunnel:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("transaction marked failed: %s", tid)
         return {"transaction": t}
+
+    # ---- result / constraint RPC methods ----
+    def _m_result_update(self, params):
+        data = params.get("result")
+        if not isinstance(data, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.result must be an object")
+        result = make_result(data)
+        # Optionally evaluate against supplied limits and attach the verdict.
+        limits = params.get("constraints")
+        if isinstance(limits, dict):
+            result["constraints"] = constraint_engine.check(result["metrics"], limits)
+        self._validate_or_raise("result", result)
+        stored = self.results.update(result)
+        self.log.info("result stored: %s (%d metrics)",
+                      result["result_id"], len(result["metrics"]))
+        return {"result": result, "path": stored.get("path")}
+
+    def _m_result_latest(self, params):
+        return {"result": self.results.latest()}
+
+    def _m_constraint_check(self, params):
+        limits = params.get("constraints")
+        if not isinstance(limits, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.constraints must be an object")
+        metrics = params.get("metrics")
+        source = "params"
+        if not isinstance(metrics, dict):
+            latest = self.results.latest()
+            if not latest:
+                raise JsonRpcError(INVALID_PARAMS,
+                                   "no metrics provided and no stored result")
+            metrics = latest.get("metrics", {})
+            source = "latest_result"
+        verdict = constraint_engine.check(metrics, limits)
+        verdict["source"] = source
+        return verdict
 
     def _m_tunnel_status(self, params):
         return {

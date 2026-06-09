@@ -35,10 +35,10 @@ reversible transaction.
 | 3 | Design context export | **done** |
 | 4 | Proposal workflow | **done** |
 | 5 | Transactional parameter modification + rollback | **done** |
-| 6 | Result + constraint display | not started |
+| 6 | Result + constraint display | **done** |
 | 7 | ADE/Spectre integration | not started |
 
-**Verified outside the GUI:** 63 pytest tests (4 skip without `jsonschema`);
+**Verified outside the GUI:** 81 pytest tests (4 skip without `jsonschema`);
 full CLI + helper smoke tests on the design server (Python 3.6.8); the SKILL
 JSON encoder emits schema-conforming context; proposal + transaction
 lifecycles verified end-to-end over JSON-RPC via the `vfp` CLI.
@@ -217,12 +217,18 @@ guessing signatures.
   before-recipe → `mark_rolled_back` (proposal → rolled_back). 18 unit/RPC
   tests cover model, permissions, store, and linkage.
 
-### Milestone 6 — Result + constraint display
-- Tunnel: `sim/{parser,metrics}.py`, `constraints/engine.py`; methods
-  `result.update`, `result.latest`, `constraint.check`; PyYAML returns as a
-  real dep; validate against `result`/`constraint` schemas.
-- CLI: `vfp result import --file … | latest`, `vfp constraint check --file …`.
-- Dashboard: show metrics + pass/fail in the result area.
+### Milestone 6 — Result + constraint display ✅ done
+- Tunnel: `sim/{parser,metrics,manager}.py`, `constraints/engine.py`; methods
+  `result.update` (optionally attaches a constraint verdict), `result.latest`,
+  `constraint.check` (against supplied metrics or the latest result). Results
+  stored under `.vfp/results`.
+- CLI: `vfp result import --file … [--constraints …] | latest`,
+  `vfp constraint check --file … [--result …]` (exit 1 on fail).
+- YAML constraint files need PyYAML (`[constraints]` extra); JSON works
+  without it, so the daemon stays stdlib-only. JSON twins added:
+  `examples/rfc_classab_opa/constraints.json`, `sample_result.json`.
+- Dashboard: `vfpRefreshResults` renders metrics + pass/fail into the ADE
+  field + result area on refresh.
 
 ### Milestone 7 — ADE/Spectre integration
 - SKILL (`vfp_ade.il` stub): list/trigger ADE tests if feasible; otherwise

@@ -37,9 +37,13 @@ def transactions_dir():
     return vfp_home() / "transactions"
 
 
+def results_dir():
+    return vfp_home() / "results"
+
+
 def ensure_dirs():
     for d in (vfp_home(), log_dir(), sessions_dir(), proposals_dir(),
-              transactions_dir()):
+              transactions_dir(), results_dir()):
         d.mkdir(parents=True, exist_ok=True)
 
 

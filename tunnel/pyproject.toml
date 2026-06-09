@@ -8,15 +8,17 @@ version = "0.1.0"
 description = "VFP Tunnel — external bridge daemon for the Virtuoso Flow Plugin"
 readme = "README.md"
 # Runtime is stdlib-only and runs on the design server's system python
-# (CentOS 7 / 3.6). PyYAML returns as a dependency at Milestone 6 (constraints).
-# Note: `pip install -e .` needs setuptools>=61 (py3.7+); on 3.6 run the
-# CLI via scripts/vfp instead of installing.
+# (CentOS 7 / 3.6). PyYAML is only needed to read YAML constraint files via
+# the CLI; JSON constraint files work without it, so the daemon stays
+# stdlib-only. Note: `pip install -e .` needs setuptools>=61 (py3.7+); on 3.6
+# run the CLI via scripts/vfp instead of installing.
 requires-python = ">=3.6"
 license = { text = "see repository LICENSE" }
 dependencies = []
 
 [project.optional-dependencies]
 validate = ["jsonschema>=4"]
+constraints = ["PyYAML>=6"]
 dev = ["pytest>=7", "jsonschema>=4", "PyYAML>=6"]
 
 [project.scripts]
