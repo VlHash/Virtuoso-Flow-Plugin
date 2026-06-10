@@ -48,13 +48,30 @@ With the tunnel running:
    instances, parameters, and connectivity to the tunnel. Verify on the
    tunnel host with `scripts/vfp context show`.
 
+## Proposals, transactions, and results
+
+With the tunnel running and an agent (or `scripts/vfp proposal create`)
+submitting proposals:
+
+- **Show Pending Proposals** lists the pending proposals in the dashboard
+  result area. `vfpShowProposal` opens a review form with **Approve /
+  Reject / Apply** buttons; each closes the form once it succeeds. Applying
+  an approved proposal writes the instance parameter(s) to the open
+  schematic and records a reversible transaction.
+- **Rollback Last Transaction** restores the most recent applied change.
+- Importing a simulation result (`scripts/vfp result import ...`) and
+  clicking **Refresh** renders the metrics and per-constraint pass/fail
+  verdict in the dashboard.
+- A pending proposal that is never approved is auto-expired tunnel-side
+  after `VFP_PROPOSAL_TTL_S` seconds (default 300).
+
 ## Status
 
-Milestones 1–3 are implemented: menu + dashboard + lib/cell/view
-(M1), tunnel **Connect** (M2), and **Export Context** (M3). The remaining
-buttons/menu items — Proposals, Apply, Rollback, Run Test — currently log
-a "not implemented yet" message; they are wired up in later milestones.
-See [`development_notes.md`](development_notes.md) for the roadmap.
+Milestones 1–7 are implemented and covered by the test suite (89 passing).
+The proposal apply → rollback flow and the result/constraint dashboard
+have been verified live in Virtuoso IC23.1. See
+[`development_notes.md`](development_notes.md) for the roadmap and the
+proposal/transaction lifecycle.
 
 ## Unloading
 

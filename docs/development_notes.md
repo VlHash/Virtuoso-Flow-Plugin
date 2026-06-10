@@ -59,7 +59,8 @@ in-Virtuoso SKILL client can reach it on localhost).
   wrap it.
 
 Default endpoint `127.0.0.1:47891` (override via `--host/--port` or
-`VFP_HOST/VFP_PORT`); artifact root `./.vfp` (override via `VFP_HOME`).
+`VFP_HOST/VFP_PORT`); artifact root `./.vfp` (override via `VFP_HOME`);
+pending-proposal TTL `300s` (override via `VFP_PROPOSAL_TTL_S`, `0` = off).
 `tunnel start` spawns the daemon detached (cross-platform: `start_new_session`
 on POSIX, `DETACHED_PROCESS` on Windows) and polls `tunnel.status` until ready.
 

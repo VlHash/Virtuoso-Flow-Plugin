@@ -5,10 +5,10 @@ exposes a localhost JSON-RPC API (default `127.0.0.1:47891`) and a `vfp`
 CLI to AI agents and scripts, and manages sessions, proposals,
 transactions, simulation results, constraints, and artifacts.
 
-**Status:** Milestones 2–3 (daemon + CLI + sessions + design-context
-storage) implemented. Pure stdlib, runs on Python **3.6+** (the design
-server's system python). Proposal/transaction/result/constraint methods
-arrive in later milestones.
+**Status:** Milestones 2–7 implemented — sessions, design context,
+proposals, transactions, results, constraints, and ADE run/artifact
+tracking. Pure stdlib, runs on Python **3.6+** (the design server's
+system python).
 
 ## Run
 
@@ -30,21 +30,26 @@ vfp tunnel start
 ```
 
 Configuration via environment: `VFP_HOST`, `VFP_PORT`, `VFP_HOME`
-(artifact root, default `./.vfp`).
+(artifact root, default `./.vfp`), and `VFP_PROPOSAL_TTL_S` (seconds a
+pending proposal lives before it is auto-expired; default `300`, `0` =
+disabled).
 
-## JSON-RPC methods (Milestones 2–3)
+## JSON-RPC methods
 
 | Method | Result |
 |--------|--------|
 | `session.register` | `{session_id, registered_at}` from `{client}` |
 | `session.ping` | `{pong, time, session_id}` (touches the session) |
-| `session.status` | the session record for a `session_id` |
-| `session.list` | `{sessions: [...]}` |
-| `session.current` | most-recently-active session |
-| `design.context.update` | store a design context (`{context}`) → `{stored, path}` |
-| `design.context.get` | `{context}` — the latest stored context |
-| `tunnel.status` | version, host/port, pid, uptime, session count |
-| `tunnel.shutdown` | graceful stop |
+| `session.status` / `session.list` / `session.current` | session records |
+| `design.context.update` / `design.context.get` | store / fetch the latest design context |
+| `proposal.create` / `list` / `get` | design-change proposals (stale pendings auto-expire) |
+| `proposal.approve` / `reject` / `mark_applied` / `mark_failed` | proposal state machine |
+| `transaction.create` / `list` / `get` | reversible before/after parameter changes |
+| `transaction.rollback` / `mark_rolled_back` / `mark_failed` | undo an applied change |
+| `result.update` / `result.latest` | store / fetch simulation metrics |
+| `constraint.check` | evaluate metrics against limits → per-metric pass/fail |
+| `run.create` / `list` / `get` / `set_status` / `attach` / `import_result` | ADE run + artifact tracking |
+| `tunnel.status` / `tunnel.shutdown` | daemon status / graceful stop |
 
 Messages are JSON-RPC 2.0, one object per line (`\n`-framed) over TCP.
 
@@ -56,7 +61,7 @@ vfp_tunnel/
   rpc/{jsonrpc,transport,schemas}.py
   session/{registry,manager}.py
   design/context.py
-  proposal/ transaction/ sim/ constraints/ artifact/ agent/   # later
+  proposal/ transaction/ sim/ constraints/ artifact/ agent/
 ```
 
 See [`../schemas/`](../schemas) for the data contract.
@@ -65,5 +70,5 @@ See [`../schemas/`](../schemas) for the data contract.
 
 ```bash
 cd ..            # repo root
-pytest tests/    # 28 passing
+pytest tests/    # 89 passing, 5 skipped (skips need optional jsonschema)
 ```

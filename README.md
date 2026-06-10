@@ -21,23 +21,24 @@ simulation results, and rolled back when needed.
 
 ## Current Status
 
-The repository is currently at the Milestone 3 stage.
+Milestones 1–7 are implemented.
 
 | Milestone | Status |
 | --- | --- |
 | Virtuoso plugin skeleton: menu, dashboard, lib/cell/view | Done |
 | VFP Tunnel: CLI, JSON-RPC, session state, SKILL bridge | Done |
 | Design context export | Done |
-| Proposal workflow | Not started |
-| Transactional parameter modification and rollback | Not started |
-| Result and constraint display | Not started |
-| ADE/Spectre integration | Not started |
+| Proposal workflow | Done |
+| Transactional parameter modification and rollback | Done |
+| Result and constraint display | Done |
+| ADE integration + run/artifact tracking | Done |
 
-Milestones 1–3 are implemented and covered by local tests (28 passing).
-The remaining manual completion checks are GUI actions inside Virtuoso:
-clicking **Connect** to register a session, and **Export Context** to push
-the current schematic to the tunnel. The lower-level SKILL helper and
-tunnel RPC paths for both are already exercised outside the GUI.
+All seven milestones are covered by the Python test suite (89 passing,
+5 skipped without `jsonschema`). The proposal apply → rollback flow, the
+result/constraint dashboard, and tunnel-side proposal expiry have also
+been verified live in Virtuoso IC23.1. Pending proposals that are never
+acted on are aged out to an `expired` status after a configurable TTL
+(default 5 minutes; set `VFP_PROPOSAL_TTL_S`).
 
 ## Requirements
 
@@ -47,8 +48,9 @@ tunnel RPC paths for both are already exercised outside the GUI.
   modern setuptools.
 - `pytest` and `jsonschema` for the Python test suite.
 
-The tunnel runtime is stdlib-only for the implemented Milestone 2 surface,
-so the design server can run it with the system Python 3.6 interpreter.
+The tunnel runtime is stdlib-only, so the design server can run it with the
+system Python 3.6 interpreter. `jsonschema` is optional and only enables
+payload validation when present.
 
 ## Installation
 
@@ -83,7 +85,8 @@ vfp tunnel start
 
 The default endpoint is `127.0.0.1:47891`. Override it with `VFP_HOST` and
 `VFP_PORT`. The artifact/session root defaults to `./.vfp`; override it
-with `VFP_HOME`.
+with `VFP_HOME`. Pending proposals expire after `VFP_PROPOSAL_TTL_S`
+seconds (default `300`; set `0` to disable expiry).
 
 ### Virtuoso plugin load
 
@@ -157,6 +160,12 @@ scripts/vfp session list
 scripts/vfp session current
 scripts/vfp context show          # latest exported design context
 scripts/vfp context import --file <ctx.json>   # load a context (testing)
+scripts/vfp proposal list                      # design-change proposals
+scripts/vfp proposal show <proposal_id>
+scripts/vfp transaction list                   # applied/rolled-back changes
+scripts/vfp result latest                      # latest simulation result
+scripts/vfp constraint check --file <constraints.json>
+scripts/vfp run list                           # ADE run / artifact tracking
 scripts/vfp tunnel stop
 ```
 
@@ -168,9 +177,10 @@ Run the Python tests from the repository root:
 pytest tests/
 ```
 
-Current verification (Milestones 1–3):
+Current verification (Milestones 1–7):
 
-- `pytest tests/`: 28 passing on Windows Python 3.14.
+- `pytest tests/`: 89 passing, 5 skipped (the skips need optional
+  `jsonschema`). Run on the design server's Python 3.6.8.
 - Full CLI smoke test on Windows Python 3.14 and the design server
   Python 3.6.8.
 - SKILL helper emits valid s-expressions for `tunnel.status`,
@@ -180,13 +190,17 @@ Current verification (Milestones 1–3):
   `vfp context import` / `vfp context show` round-trips a context through
   the daemon.
 
-Manual GUI completion checks:
+Manual GUI checks (verified live in Virtuoso IC23.1):
 
 1. On the design server, run `scripts/vfp tunnel start`.
 2. Reload the plugin in Virtuoso and open the dashboard.
 3. Click **Connect** and confirm a connected session and tunnel summary.
 4. Open a schematic, click **Export** (Export Context), and confirm the
    payload with `scripts/vfp context show`.
+5. Apply an approved proposal and confirm the instance parameter changes
+   on the schematic; **Rollback Last Transaction** restores it.
+6. Import a result (`scripts/vfp result import ...`) and **Refresh** the
+   dashboard to see the metrics and per-constraint pass/fail verdict.
 
 ## Repository Layout
 
