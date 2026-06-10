@@ -115,7 +115,7 @@ defun( vfpMenuRollbackCB ()
         if( tid
           then vfpRollbackTransaction(tid)
           else
-            hiDisplayAppDBox(?name 'vfpInfoDBox
+            hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
               ?dboxText "No applied transaction to roll back."
               ?buttonLayout 'Close)
         )

@@ -11,6 +11,11 @@ from pathlib import Path
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 47891
 
+# Pending proposals older than this many seconds are aged out to "expired"
+# (lazily, on the next list/get). Override with VFP_PROPOSAL_TTL_S; set to
+# 0 (or negative) to disable expiry entirely.
+DEFAULT_PROPOSAL_TTL_S = 300
+
 
 def vfp_home():
     env = os.environ.get("VFP_HOME")
@@ -49,6 +54,17 @@ def ensure_dirs():
     for d in (vfp_home(), log_dir(), sessions_dir(), proposals_dir(),
               transactions_dir(), results_dir(), runs_dir()):
         d.mkdir(parents=True, exist_ok=True)
+
+
+def proposal_ttl_s():
+    """Seconds a pending proposal lives before being auto-expired (0 = off)."""
+    raw = os.environ.get("VFP_PROPOSAL_TTL_S")
+    if raw in (None, ""):
+        return DEFAULT_PROPOSAL_TTL_S
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_PROPOSAL_TTL_S
 
 
 def resolve_host(host=None):

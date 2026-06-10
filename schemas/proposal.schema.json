@@ -27,7 +27,7 @@
   "$defs": {
     "status": {
       "type": "string",
-      "enum": ["pending", "approved", "rejected", "applied", "failed", "rolled_back"]
+      "enum": ["pending", "approved", "rejected", "applied", "failed", "rolled_back", "expired"]
     },
     "cellview": {
       "type": "object",

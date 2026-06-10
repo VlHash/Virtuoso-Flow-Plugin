@@ -5,8 +5,9 @@ Thread-safe, stdlib-only, Python 3.6+.
 
 import json
 import threading
+import time
 
-from ..config import ensure_dirs, proposals_dir
+from ..config import ensure_dirs, proposals_dir, proposal_ttl_s
 from .model import make_proposal, transition
 
 
@@ -50,16 +51,50 @@ class ProposalStore:
         return p
 
     def get(self, proposal_id):
-        """Return the proposal dict or None."""
+        """Return the proposal dict or None (after aging out stale pendings)."""
+        self.expire_stale()
         return self._proposals.get(proposal_id)
 
     def list(self, status=None):
-        """Return all proposals (newest-first by created_at), optionally filtered."""
+        """Return all proposals (newest-first by created_at), optionally filtered.
+
+        Pending proposals past their TTL are aged out to "expired" first, so a
+        ``status="pending"`` query never returns one that has timed out.
+        """
+        self.expire_stale()
         with self._lock:
             items = list(self._proposals.values())
         if status:
             items = [p for p in items if p.get("status") == status]
         return sorted(items, key=lambda p: p.get("created_at", ""), reverse=True)
+
+    def expire_stale(self):
+        """Transition any pending proposal past its TTL to "expired".
+
+        Lazy sweep (called on list/get); returns the list of newly-expired
+        proposal_ids. A TTL of 0 or less disables expiry. Proposals without a
+        ``created_ts`` (legacy records) are left untouched.
+        """
+        ttl = proposal_ttl_s()
+        if ttl <= 0:
+            return []
+        now = time.time()
+        newly = []
+        with self._lock:
+            for pid, p in list(self._proposals.items()):
+                if p.get("status") != "pending":
+                    continue
+                ts = p.get("created_ts")
+                if ts is None or (now - ts) <= ttl:
+                    continue
+                updated = transition(p, "expired")
+                updated["expired_reason"] = (
+                    "no approval within %ds TTL" % ttl)
+                self._proposals[pid] = updated
+                newly.append(updated)
+        for u in newly:
+            self._persist(u)
+        return [u["proposal_id"] for u in newly]
 
     def approve(self, proposal_id):
         return self._set_status(proposal_id, "approved")

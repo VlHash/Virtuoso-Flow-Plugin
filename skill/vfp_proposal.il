@@ -50,12 +50,29 @@ defun( vfpFetchPendingProposals ()
 )
 
 
+;; Close the proposal review form if it is open. Called after Approve /
+;; Reject / Apply so the review window does not linger once acted upon.
+;; (Stale pending proposals are aged out tunnel-side via a TTL; see the
+;; tunnel's proposal store -- GUI timers are unavailable in this build.)
+defun( vfpCloseProposalForm ()
+  when( and(boundp('vfpProposalForm) vfpProposalForm)
+    errset( hiFormCancel(vfpProposalForm) ) )
+  t
+)
+
+
 ;; ---- vfpShowProposal ------------------------------------------------
 ;; proposal: an alist (as returned by vfpFetchPendingProposals).
-;; Opens a read-only dialog with the proposal details and
-;; Approve / Reject buttons.
+;; Opens a modeless review dialog with the proposal details and
+;; Approve / Reject / Apply buttons, each of which closes the form on
+;; success. The form is modeless, so it never blocks; stale pending
+;; proposals are aged out tunnel-side via a TTL.
 defun( vfpShowProposal (proposal)
-  let( (pid reason cv changes txt form)
+  prog( (pid reason cv changes txt form)
+    ;; Guard against an empty pending list (car of nil) or a bad caller.
+    unless( proposal
+      vfpError("vfpShowProposal: called with no proposal")
+      return(nil) )
     pid     = vfpAlistGet(proposal "proposal_id")
     reason  = vfpAlistGet(proposal "reason")
     cv      = vfpAlistGet(proposal "cellview")
@@ -102,7 +119,7 @@ defun( vfpShowProposal (proposal)
       ?buttonLayout 'Close
     )
     hiDisplayForm(form)
-    form
+    return(form)
   )
 )
 
@@ -118,6 +135,7 @@ defun( vfpApproveProposal (proposalId)
       then
         hiDisplayAppDBox(
           ?name    'vfpErrDBox
+          ?dboxBanner "Virtuoso Flow - Error"
           ?dboxText sprintf(nil "Approve failed:\n%s" vfpFmtError(payload))
           ?buttonLayout 'Close
         )
@@ -125,8 +143,10 @@ defun( vfpApproveProposal (proposalId)
       else
         p = vfpAlistGet(payload "proposal")
         vfpLog(sprintf(nil "approved proposal %s" proposalId))
+        vfpCloseProposalForm()       ;; auto-close the review form
         hiDisplayAppDBox(
           ?name    'vfpInfoDBox
+          ?dboxBanner "Virtuoso Flow"
           ?dboxText sprintf(nil "Proposal %s approved.\nStatus: %s"
                       proposalId vfpAlistGet(p "status"))
           ?buttonLayout 'Close
@@ -149,6 +169,7 @@ defun( vfpRejectProposal (proposalId)
       then
         hiDisplayAppDBox(
           ?name    'vfpErrDBox
+          ?dboxBanner "Virtuoso Flow - Error"
           ?dboxText sprintf(nil "Reject failed:\n%s" vfpFmtError(payload))
           ?buttonLayout 'Close
         )
@@ -156,8 +177,10 @@ defun( vfpRejectProposal (proposalId)
       else
         p = vfpAlistGet(payload "proposal")
         vfpLog(sprintf(nil "rejected proposal %s" proposalId))
+        vfpCloseProposalForm()       ;; auto-close the review form
         hiDisplayAppDBox(
           ?name    'vfpInfoDBox
+          ?dboxBanner "Virtuoso Flow"
           ?dboxText sprintf(nil "Proposal %s rejected.\nStatus: %s"
                       proposalId vfpAlistGet(p "status"))
           ?buttonLayout 'Close
@@ -185,6 +208,7 @@ defun( vfpApplyProposal (proposalId)
     unless( ok
       hiDisplayAppDBox(
         ?name    'vfpErrDBox
+        ?dboxBanner "Virtuoso Flow - Error"
         ?dboxText sprintf(nil "Apply failed (get):\n%s" vfpFmtError(payload))
         ?buttonLayout 'Close)
       return(nil)
@@ -197,17 +221,21 @@ defun( vfpApplyProposal (proposalId)
     unless( equal(status "approved")
       hiDisplayAppDBox(
         ?name    'vfpInfoDBox
+        ?dboxBanner "Virtuoso Flow"
         ?dboxText sprintf(nil "Proposal %s is '%s'.\nApprove it before applying."
                     proposalId status)
         ?buttonLayout 'Close)
       return(nil)
     )
 
-    ;; 3. Apply as a reversible transaction.
+    ;; 3. Apply as a reversible transaction; close the review form on success.
     return(
-      if( isCallable('vfpApplyTransaction)
-        then vfpApplyTransaction(proposal)
-        else vfpNotImplemented("vfpApplyTransaction")
+      let( (res)
+        res = if( isCallable('vfpApplyTransaction)
+                then vfpApplyTransaction(proposal)
+                else vfpNotImplemented("vfpApplyTransaction") )
+        when( res vfpCloseProposalForm() )
+        res
       )
     )
   )
