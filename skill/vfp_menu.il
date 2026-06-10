@@ -115,7 +115,7 @@ defun( vfpMenuRollbackCB ()
         if( tid
           then vfpRollbackTransaction(tid)
           else
-            hiDisplayAppDBox(?name 'vfpInfoDBox
+            hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
               ?dboxText "No applied transaction to roll back."
               ?buttonLayout 'Close)
         )
@@ -124,7 +124,8 @@ defun( vfpMenuRollbackCB ()
   )
 )
 defun( vfpMenuRunTestCB ()
-  if( isCallable('vfpRunAdeTest) vfpNotImplemented("Run Selected ADE Test (select one first)")
+  if( isCallable('vfpRunAdeTest)
+      vfpRunAdeTest(nil)
       vfpNotImplemented("Run Selected ADE Test") )
 )
 defun( vfpMenuRefreshCB ()

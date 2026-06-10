@@ -86,7 +86,7 @@ defun( vfpApplyTransaction (proposal)
 
     cv = vfpOpenSchematicForEdit(lib cell)
     unless( cv
-      hiDisplayAppDBox(?name 'vfpErrDBox
+      hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
         ?dboxText sprintf(nil "Cannot open schematic %s/%s for edit." lib cell)
         ?buttonLayout 'Close)
       vfpRpcExec("proposal.mark_failed"
@@ -114,7 +114,7 @@ defun( vfpApplyTransaction (proposal)
         then
           txnId = vfpAlistGet(vfpAlistGet(payload "transaction") "transaction_id")
           vfpLog(sprintf(nil "applied proposal %s as transaction %s" pid txnId))
-          hiDisplayAppDBox(?name 'vfpInfoDBox
+          hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
             ?dboxText sprintf(nil "Applied proposal %s.\nTransaction: %s" pid txnId)
             ?buttonLayout 'Close)
           when( isCallable('vfpFetchPendingProposals) vfpFetchPendingProposals() )
@@ -125,7 +125,7 @@ defun( vfpApplyTransaction (proposal)
           vfpRestoreFromChanges(cv changes)
           vfpRpcExec("proposal.mark_failed"
             list("--param" sprintf(nil "proposal_id=%s" pid)))
-          hiDisplayAppDBox(?name 'vfpErrDBox
+          hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
             ?dboxText sprintf(nil "Apply rejected: %s\nChange reverted." vfpFmtError(payload))
             ?buttonLayout 'Close)
           nil
@@ -146,7 +146,7 @@ defun( vfpRollbackTransaction (transactionId)
     ok = car(res)
     payload = cadr(res)
     unless( ok
-      hiDisplayAppDBox(?name 'vfpErrDBox
+      hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
         ?dboxText sprintf(nil "Rollback failed:\n%s" vfpFmtError(payload))
         ?buttonLayout 'Close)
       return(nil)
@@ -160,7 +160,7 @@ defun( vfpRollbackTransaction (transactionId)
 
     cv = vfpOpenSchematicForEdit(lib cell)
     unless( cv
-      hiDisplayAppDBox(?name 'vfpErrDBox
+      hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
         ?dboxText sprintf(nil "Cannot open schematic %s/%s for rollback." lib cell)
         ?buttonLayout 'Close)
       return(nil)
@@ -181,7 +181,7 @@ defun( vfpRollbackTransaction (transactionId)
           vfpRpcExec("transaction.mark_rolled_back"
             list("--param" sprintf(nil "transaction_id=%s" transactionId)))
           vfpLog(sprintf(nil "rolled back transaction %s" transactionId))
-          hiDisplayAppDBox(?name 'vfpInfoDBox
+          hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
             ?dboxText sprintf(nil "Transaction %s rolled back." transactionId)
             ?buttonLayout 'Close)
           when( isCallable('vfpUpdateDashboard) vfpUpdateDashboard() )
@@ -189,7 +189,7 @@ defun( vfpRollbackTransaction (transactionId)
         else
           vfpRpcExec("transaction.mark_failed"
             list("--param" sprintf(nil "transaction_id=%s" transactionId)))
-          hiDisplayAppDBox(?name 'vfpErrDBox
+          hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
             ?dboxText sprintf(nil "Rollback of %s incomplete; marked failed." transactionId)
             ?buttonLayout 'Close)
           nil

@@ -6,17 +6,20 @@ Pure stdlib, Python 3.6+.
 import time
 import uuid
 
-VALID_STATUSES = ("pending", "approved", "rejected", "applied", "failed", "rolled_back")
-TERMINAL_STATUSES = ("applied", "failed", "rolled_back")
+VALID_STATUSES = ("pending", "approved", "rejected", "applied", "failed",
+                  "rolled_back", "expired")
+TERMINAL_STATUSES = ("applied", "failed", "rolled_back", "expired")
 
-# Allowed status transitions.
+# Allowed status transitions. "expired" is reached only by the TTL sweep
+# (a pending proposal that was never acted upon in time).
 TRANSITIONS = {
-    "pending":     ("approved", "rejected"),
+    "pending":     ("approved", "rejected", "expired"),
     "approved":    ("applied", "failed"),
     "rejected":    (),
     "applied":     ("rolled_back",),
     "failed":      (),
     "rolled_back": (),
+    "expired":     (),
 }
 
 
@@ -44,6 +47,9 @@ def make_proposal(data):
     p.setdefault("changes", [])
     if "created_at" not in p:
         p["created_at"] = _iso(ts)
+    # Epoch seconds for reliable age computation (the TTL sweep); preserve
+    # an existing value so re-normalising is idempotent.
+    p.setdefault("created_ts", ts)
     p["updated_at"] = _iso(ts)
     return p
 

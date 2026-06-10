@@ -8,6 +8,7 @@ Covers:
 """
 
 import threading
+import time
 
 import pytest
 
@@ -97,6 +98,57 @@ def test_store_list_and_filter(store):
     assert pending[0]["proposal_id"] == "p_b"
     assert len(approved) == 1
     assert approved[0]["proposal_id"] == "p_a"
+
+
+# ---- TTL (auto-expiry of stale pending proposals) -------------------
+
+def _ttl_store(tmp_path, monkeypatch, ttl):
+    """Fresh ProposalStore under tmp_path with VFP_PROPOSAL_TTL_S=ttl."""
+    monkeypatch.setenv("VFP_HOME", str(tmp_path))
+    monkeypatch.setenv("VFP_PROPOSAL_TTL_S", str(ttl))
+    import importlib
+    import vfp_tunnel.config as cfg
+    importlib.reload(cfg)
+    import vfp_tunnel.proposal.manager as m
+    importlib.reload(m)
+    return m.ProposalStore()
+
+
+def test_ttl_expires_stale_pending(tmp_path, monkeypatch):
+    store = _ttl_store(tmp_path, monkeypatch, ttl=60)
+    store.create({"proposal_id": "p_old", "reason": "x"})
+    # Backdate so it is already well past the 60s TTL.
+    store._proposals["p_old"]["created_ts"] = time.time() - 120
+
+    # A pending query triggers the sweep; the stale one must be gone.
+    assert store.list(status="pending") == []
+    expired = store.get("p_old")
+    assert expired["status"] == "expired"
+    assert "expired_reason" in expired
+
+
+def test_ttl_keeps_fresh_pending(tmp_path, monkeypatch):
+    store = _ttl_store(tmp_path, monkeypatch, ttl=60)
+    store.create({"proposal_id": "p_fresh", "reason": "x"})
+    pending = store.list(status="pending")
+    assert [p["proposal_id"] for p in pending] == ["p_fresh"]
+
+
+def test_ttl_zero_disables_expiry(tmp_path, monkeypatch):
+    store = _ttl_store(tmp_path, monkeypatch, ttl=0)
+    store.create({"proposal_id": "p_keep", "reason": "x"})
+    store._proposals["p_keep"]["created_ts"] = time.time() - 10000
+    assert store.expire_stale() == []
+    assert store.get("p_keep")["status"] == "pending"
+
+
+def test_ttl_only_touches_pending(tmp_path, monkeypatch):
+    store = _ttl_store(tmp_path, monkeypatch, ttl=60)
+    store.create({"proposal_id": "p_appr", "reason": "x"})
+    store.approve("p_appr")
+    store._proposals["p_appr"]["created_ts"] = time.time() - 120
+    assert store.expire_stale() == []
+    assert store.get("p_appr")["status"] == "approved"
 
 
 def test_store_approve_reject_persist(tmp_path, monkeypatch):

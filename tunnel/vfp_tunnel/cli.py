@@ -421,6 +421,69 @@ def cmd_constraint_check(args):
     return 0 if overall == "pass" else 1
 
 
+# ---- run ------------------------------------------------------------
+def cmd_run_list(args):
+    host, port = _endpoint(args)
+    params = {}
+    if args.status:
+        params["status"] = args.status
+    try:
+        res = call("run.list", params, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    items = res.get("runs", [])
+    if not items:
+        print("No runs found.")
+        return 0
+    for r in items:
+        print("%-22s  %-8s  test=%s  result=%s  %s"
+              % (r.get("run_id"), r.get("status"), r.get("test", "-"),
+                 r.get("result_id") or "-", r.get("created_at", "")))
+    return 0
+
+
+def cmd_run_show(args):
+    host, port = _endpoint(args)
+    try:
+        res = call("run.get", {"run_id": args.run_id}, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    print(json.dumps(res.get("run", {}), indent=2))
+    return 0
+
+
+def cmd_run_import_result(args):
+    from .sim.parser import parse_metrics_file
+    try:
+        metrics = parse_metrics_file(args.file)
+    except (OSError, ValueError) as e:
+        return _fail("could not read %s: %s" % (args.file, e))
+    if not metrics:
+        return _fail("no metrics found in %s" % args.file)
+    params = {"run_id": args.run_id, "metrics": metrics, "source": args.source}
+    if args.constraints:
+        try:
+            limits = (_load_struct(args.constraints) or {}).get("metrics")
+        except (OSError, ValueError) as e:
+            return _fail(e)
+        if limits:
+            params["constraints"] = limits
+    host, port = _endpoint(args)
+    try:
+        res = call("run.import_result", params, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    run = res.get("run", {})
+    result = res.get("result", {})
+    line = "run %s -> %s  result %s" % (run.get("run_id"), run.get("status"),
+                                        result.get("result_id"))
+    cons = result.get("constraints")
+    if cons:
+        line += "  constraints=%s" % cons.get("overall")
+    print(line)
+    return 0
+
+
 # ---- parser ---------------------------------------------------------
 def build_parser():
     p = argparse.ArgumentParser(prog="vfp", description="VFP Tunnel CLI")
@@ -520,6 +583,24 @@ def build_parser():
     cc.add_argument("--result", default=None,
                     help="metrics/result file (defaults to the latest stored result)")
     cc.set_defaults(func=cmd_constraint_check)
+
+    run = groups.add_parser("run", help="simulation runs + artifacts")
+    runsub = run.add_subparsers(dest="cmd")
+    rl = runsub.add_parser("list", help="list runs")
+    rl.add_argument("--status", default=None,
+                    help="filter by status (created/running/done/failed)")
+    rl.set_defaults(func=cmd_run_list)
+    rs = runsub.add_parser("show", help="show a run in full")
+    rs.add_argument("run_id")
+    rs.set_defaults(func=cmd_run_show)
+    rir = runsub.add_parser("import-result",
+                            help="import a result file and link it to a run")
+    rir.add_argument("--run", dest="run_id", required=True)
+    rir.add_argument("--file", required=True)
+    rir.add_argument("--source", default="ade")
+    rir.add_argument("--constraints", default=None,
+                     help="constraint file to evaluate against on import")
+    rir.set_defaults(func=cmd_run_import_result)
 
     return p
 
