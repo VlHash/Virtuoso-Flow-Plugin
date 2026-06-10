@@ -28,9 +28,15 @@ docs/IC231_gui_plugin_docs/
 project.md
 AGENTS.md
 CLAUDE.md
+TODO.md
+HANDOFF.local.md
+
+# Local scratch from agent-driven GUI/bridge testing (scripts + screenshots)
+gui_test/
 
 # Local archives / snapshots
 *.zip
+*.rar
 
 # Editors / OS
 .vscode/
