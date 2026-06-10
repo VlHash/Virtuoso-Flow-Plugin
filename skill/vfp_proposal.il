@@ -124,6 +124,29 @@ defun( vfpShowProposal (proposal)
 )
 
 
+;; ---- vfpReviewPendingProposal ---------------------------------------
+;; Menu/button entry point for vfpShowProposal: fetch the pending
+;; proposals and open the review form (Approve / Reject / Apply) on the
+;; first one. Each action refreshes the pending list, so repeating this
+;; walks the queue.
+defun( vfpReviewPendingProposal ()
+  let( (proposals)
+    proposals = vfpFetchPendingProposals()
+    if( proposals
+      then vfpShowProposal(car(proposals))
+      else
+        hiDisplayAppDBox(
+          ?name    'vfpInfoDBox
+          ?dboxBanner "Virtuoso Flow"
+          ?dboxText "No pending proposal to review."
+          ?buttonLayout 'Close
+        )
+        nil
+    )
+  )
+)
+
+
 ;; ---- vfpApproveProposal --------------------------------------------
 defun( vfpApproveProposal (proposalId)
   let( (ret ok payload p)
@@ -237,6 +260,43 @@ defun( vfpApplyProposal (proposalId)
         when( res vfpCloseProposalForm() )
         res
       )
+    )
+  )
+)
+
+
+;; ---- vfpApplyApprovedProposal ---------------------------------------
+;; Menu/button entry point for vfpApplyProposal: fetch the approved
+;; proposals and apply the first one. vfpApplyProposal re-checks the
+;; approval gate itself.
+defun( vfpApplyApprovedProposal ()
+  let( (ret ok payload proposals)
+    ret     = vfpRpcExec("proposal.list" list("--param-json" "status=\"approved\""))
+    ok      = car(ret)
+    payload = cadr(ret)
+    if( null(ok)
+      then
+        hiDisplayAppDBox(
+          ?name    'vfpErrDBox
+          ?dboxBanner "Virtuoso Flow - Error"
+          ?dboxText sprintf(nil "Apply failed (list):\n%s" vfpFmtError(payload))
+          ?buttonLayout 'Close
+        )
+        nil
+      else
+        proposals = vfpAlistGet(payload "proposals")
+        if( null(proposals)
+          then
+            hiDisplayAppDBox(
+              ?name    'vfpInfoDBox
+              ?dboxBanner "Virtuoso Flow"
+              ?dboxText "No approved proposal to apply.\nReview and approve a pending proposal first."
+              ?buttonLayout 'Close
+            )
+            nil
+          else
+            vfpApplyProposal(vfpAlistGet(car(proposals) "proposal_id"))
+        )
     )
   )
 )
