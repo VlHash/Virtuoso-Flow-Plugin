@@ -36,9 +36,9 @@ reversible transaction.
 | 4 | Proposal workflow | **done** |
 | 5 | Transactional parameter modification + rollback | **done** |
 | 6 | Result + constraint display | **done** |
-| 7 | ADE/Spectre integration | not started |
+| 7 | ADE/Spectre integration | **done** (tunnel) · ADE triggering best-effort |
 
-**Verified outside the GUI:** 81 pytest tests (4 skip without `jsonschema`);
+**Verified outside the GUI:** 90 pytest tests (4 skip without `jsonschema`);
 full CLI + helper smoke tests on the design server (Python 3.6.8); the SKILL
 JSON encoder emits schema-conforming context; proposal + transaction
 lifecycles verified end-to-end over JSON-RPC via the `vfp` CLI.
@@ -230,9 +230,17 @@ guessing signatures.
 - Dashboard: `vfpRefreshResults` renders metrics + pass/fail into the ADE
   field + result area on refresh.
 
-### Milestone 7 — ADE/Spectre integration
-- SKILL (`vfp_ade.il` stub): list/trigger ADE tests if feasible; otherwise
-  ingest result files first. Artifact folder per run under `.vfp/runs/`.
+### Milestone 7 — ADE/Spectre integration ✅ done (tunnel) / best-effort (ADE)
+- Tunnel: `artifact/manager.py` `RunStore` under `.vfp/runs/<run_id>/`
+  (run.json + artifacts); methods `run.create/list/get/set_status/attach/
+  import_result`. `import_result` stores metrics as a result, links it to the
+  run, evaluates constraints, and marks the run done. CLI: `vfp run
+  list | show | import-result`.
+- SKILL `vfp_ade.il`: `vfpRunAdeTest` opens a run on the tunnel and (if an
+  ADE session exists) best-effort triggers the sim; metrics are imported via
+  `vfp run import-result`. The `asi*` ADE calls are wrapped in `errset` and
+  **need live-GUI confirmation** — they degrade to the tunnel run flow if the
+  API differs. Wired to the "Run Selected ADE Test" menu item.
 
 ### Tech debt / nice-to-haves
 - `vfp_rpc_server.il` (push events to the plugin) is a stub — only needed

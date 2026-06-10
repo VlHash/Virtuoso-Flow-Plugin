@@ -14,6 +14,7 @@ from . import __version__
 from .config import ensure_dirs, resolve_host, resolve_port, state_file
 from .design.context import ContextStore
 from .logging_config import get_logger
+from .artifact.manager import RunStore
 from .constraints import engine as constraint_engine
 from .proposal.manager import ProposalStore
 from .rpc import schemas
@@ -45,6 +46,7 @@ class Tunnel:
         self.proposals = ProposalStore()
         self.transactions = TransactionStore()
         self.results = ResultStore()
+        self.runs = RunStore()
         # Default modify-permissions (empty => allow all). Milestone 6's
         # constraint engine will populate this from the constraint file.
         self.permissions = {}
@@ -83,6 +85,13 @@ class Tunnel:
         d.register("result.update",   self._m_result_update)
         d.register("result.latest",   self._m_result_latest)
         d.register("constraint.check", self._m_constraint_check)
+        # Run / artifact methods
+        d.register("run.create",        self._m_run_create)
+        d.register("run.list",          self._m_run_list)
+        d.register("run.get",           self._m_run_get)
+        d.register("run.set_status",    self._m_run_set_status)
+        d.register("run.attach",        self._m_run_attach)
+        d.register("run.import_result", self._m_run_import_result)
 
     def _validate_or_raise(self, name, data):
         """Optional schema validation (no-op if jsonschema absent)."""
@@ -362,6 +371,74 @@ class Tunnel:
         verdict = constraint_engine.check(metrics, limits)
         verdict["source"] = source
         return verdict
+
+    # ---- run / artifact RPC methods ----
+    def _m_run_create(self, params):
+        meta = params.get("run") if isinstance(params.get("run"), dict) else {}
+        run = self.runs.create(meta)
+        self.log.info("run created: %s (%s)", run["run_id"], meta.get("test"))
+        return {"run": run}
+
+    def _m_run_list(self, params):
+        items = self.runs.list(status=params.get("status"))
+        return {"runs": items, "count": len(items)}
+
+    def _m_run_get(self, params):
+        rid = params.get("run_id")
+        if not rid:
+            raise JsonRpcError(INVALID_PARAMS, "params.run_id required")
+        run = self.runs.get(rid)
+        if run is None:
+            raise JsonRpcError(UNKNOWN_ID, "unknown run_id: %s" % rid)
+        return {"run": run}
+
+    def _m_run_set_status(self, params):
+        rid = params.get("run_id")
+        if not rid:
+            raise JsonRpcError(INVALID_PARAMS, "params.run_id required")
+        try:
+            run = self.runs.set_status(rid, params.get("status"))
+        except KeyError as e:
+            raise JsonRpcError(UNKNOWN_ID, str(e))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        return {"run": run}
+
+    def _m_run_attach(self, params):
+        rid = params.get("run_id")
+        label = params.get("label")
+        if not rid or not label:
+            raise JsonRpcError(INVALID_PARAMS, "params.run_id and params.label required")
+        text = params.get("text")
+        if text is None:
+            raise JsonRpcError(INVALID_PARAMS, "params.text required")
+        filename = params.get("filename") or (label + ".txt")
+        try:
+            run = self.runs.attach_text(rid, label, filename, text)
+        except KeyError as e:
+            raise JsonRpcError(UNKNOWN_ID, str(e))
+        return {"run": run}
+
+    def _m_run_import_result(self, params):
+        """Store metrics as a result, link it to a run, and mark the run done."""
+        rid = params.get("run_id")
+        if not rid:
+            raise JsonRpcError(INVALID_PARAMS, "params.run_id required")
+        if self.runs.get(rid) is None:
+            raise JsonRpcError(UNKNOWN_ID, "unknown run_id: %s" % rid)
+        metrics = params.get("metrics")
+        if not isinstance(metrics, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.metrics must be an object")
+        result = make_result({"metrics": metrics, "source": params.get("source", "ade")})
+        limits = params.get("constraints")
+        if isinstance(limits, dict):
+            result["constraints"] = constraint_engine.check(result["metrics"], limits)
+        self._validate_or_raise("result", result)
+        self.results.update(result)
+        self.runs.link_result(rid, result["result_id"])
+        run = self.runs.set_status(rid, "done")
+        self.log.info("run %s imported result %s", rid, result["result_id"])
+        return {"run": run, "result": result}
 
     def _m_tunnel_status(self, params):
         return {
