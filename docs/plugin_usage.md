@@ -70,6 +70,18 @@ submitting proposals:
 - A pending proposal that is never approved is auto-expired tunnel-side
   after `VFP_PROPOSAL_TTL_S` seconds (default 300).
 
+## Auto-refresh (event bridge)
+
+After **Connect**, the plugin starts `scripts/vfp_event_client.py` as a
+background child of Virtuoso. The helper long-polls the tunnel for
+events (`event.wait`, falling back to `event.list`) and streams them to
+the plugin, which refreshes the dashboard (and the pending-proposal
+list on `proposal.*` events) automatically — no manual **Refresh**
+needed. If the tunnel does not provide event RPCs yet, the helper exits
+quietly and everything else keeps working. `vfpEventBridgeStart()` /
+`vfpEventBridgeStop()` control it manually; it is stopped by
+Disconnect and `vfpUnload()`.
+
 ## Status
 
 Milestones 1–7 are implemented and covered by the test suite (89 passing).
@@ -96,5 +108,6 @@ dashboard.
 | `vfpUpdateDashboard()` | Refresh dashboard fields from the current window. |
 | `vfpConnect()` | Register the Virtuoso session with VFP Tunnel. |
 | `vfpExportDesignContext()` | Send the current schematic context to the tunnel. |
-| `vfpUnload()` | Remove menu and close dashboard. |
+| `vfpEventBridgeStart()` / `vfpEventBridgeStop()` | Start / stop the tunnel event bridge. |
+| `vfpUnload()` | Stop the event bridge, remove menu, close dashboard. |
 | `vfpGetVersion()` | Plugin version string. |

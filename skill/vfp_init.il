@@ -36,6 +36,7 @@ VFP_MODULES = '(
   "vfp_transaction.il"
   "vfp_menu.il"
   "vfp_dashboard.il"
+  "vfp_rpc_server.il"
 )
 
 defun( vfpLoad (@optional (dir VFP_SKILL_DIR))
@@ -64,6 +65,7 @@ defun( vfpInit (@optional (dir VFP_SKILL_DIR))
 )
 
 defun( vfpUnload ()
+  when( isCallable('vfpEventBridgeStop) errset(vfpEventBridgeStop()) )
   when( isCallable('vfpCloseDashboard) vfpCloseDashboard() )
   when( isCallable('vfpUnregisterMenu) vfpUnregisterMenu() )
   printf("[VFP] Virtuoso Flow Plugin unloaded.\n")

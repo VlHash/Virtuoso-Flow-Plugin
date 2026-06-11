@@ -149,6 +149,9 @@ defun( vfpConnect ()
             vfpToStr(or(vfpAlistGet(spay "port") "?"))))
         )
         when( isCallable('vfpUpdateDashboard) vfpUpdateDashboard() )
+        ;; Start the tunnel→GUI event bridge (no-op if already running;
+        ;; the client exits quietly while the tunnel lacks event RPCs).
+        when( isCallable('vfpEventBridgeStart) errset(vfpEventBridgeStart()) )
         sid
       else
         vfpStateSet('connected nil)
@@ -162,6 +165,7 @@ defun( vfpConnect ()
 )
 
 defun( vfpDisconnect ()
+  when( isCallable('vfpEventBridgeStop) errset(vfpEventBridgeStop()) )
   vfpStateSet('connected nil)
   vfpStateSet('sessionId nil)
   when( isCallable('vfpUpdateDashboard) vfpUpdateDashboard() )
