@@ -103,6 +103,19 @@ defun( vfpApplyTransaction (proposal)
                                      vfpAlistGet(ch "after"))
         okAll = nil )
     )
+    ;; A partial write must never be recorded as an applied transaction:
+    ;; undo, mark the proposal failed, and stop.
+    unless( okAll
+      vfpError(sprintf(nil "could not set every parameter for proposal %s" pid))
+      vfpRestoreFromChanges(cv changes)
+      vfpRpcExec("proposal.mark_failed"
+        list("--param" sprintf(nil "proposal_id=%s" pid)))
+      hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
+        ?dboxText sprintf(nil
+          "Apply failed: not every parameter could be set.\nChange reverted; proposal %s marked failed." pid)
+        ?buttonLayout 'Close)
+      return(nil)
+    )
     afterArr = vfpRecordAfterState(cv changes)
     vfpSaveCellView(cv)
 
