@@ -19,10 +19,15 @@ dependencies = []
 [project.optional-dependencies]
 validate = ["jsonschema>=4"]
 constraints = ["PyYAML>=6"]
+# Agent-facing MCP server (runs on the agent host, not the design server;
+# needs Python 3.10+). The daemon never imports it, so the tunnel stays
+# stdlib-only on 3.6.
+agent = ["mcp>=1.0"]
 dev = ["pytest>=7", "jsonschema>=4", "PyYAML>=6"]
 
 [project.scripts]
 vfp = "vfp_tunnel.cli:main"
+vfp-mcp = "vfp_tunnel.agent.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
