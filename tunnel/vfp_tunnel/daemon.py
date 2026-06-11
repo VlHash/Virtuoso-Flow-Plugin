@@ -13,6 +13,7 @@ import time
 from . import __version__
 from .config import ensure_dirs, resolve_host, resolve_port, state_file
 from .design.context import ContextStore
+from .event.manager import EventLog
 from .logging_config import get_logger
 from .artifact.manager import RunStore
 from .constraints import engine as constraint_engine
@@ -47,6 +48,7 @@ class Tunnel:
         self.transactions = TransactionStore()
         self.results = ResultStore()
         self.runs = RunStore()
+        self.events = EventLog()
         # Default modify-permissions (empty => allow all). Milestone 6's
         # constraint engine will populate this from the constraint file.
         self.permissions = {}
@@ -92,6 +94,9 @@ class Tunnel:
         d.register("run.set_status",    self._m_run_set_status)
         d.register("run.attach",        self._m_run_attach)
         d.register("run.import_result", self._m_run_import_result)
+        # Event stream
+        d.register("event.list", self._m_event_list)
+        d.register("event.wait", self._m_event_wait)
 
     def _validate_or_raise(self, name, data):
         """Optional schema validation (no-op if jsonschema absent)."""
@@ -158,9 +163,14 @@ class Tunnel:
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal created: %s (%s)", p["proposal_id"], p.get("reason", "")[:60])
+        self.events.emit("proposal.created",
+                         {"proposal_id": p["proposal_id"], "cellview": p.get("cellview")})
         return {"proposal": p}
 
     def _m_proposal_list(self, params):
+        # Surface any TTL expirations as events before serving the list.
+        for pid in self.proposals.expire_stale():
+            self.events.emit("proposal.expired", {"proposal_id": pid})
         status = params.get("status")
         items = self.proposals.list(status=status)
         return {"proposals": items, "count": len(items)}
@@ -185,6 +195,7 @@ class Tunnel:
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal approved: %s", pid)
+        self.events.emit("proposal.approved", {"proposal_id": pid})
         return {"proposal": p}
 
     def _m_proposal_reject(self, params):
@@ -198,6 +209,7 @@ class Tunnel:
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal rejected: %s", pid)
+        self.events.emit("proposal.rejected", {"proposal_id": pid})
         return {"proposal": p}
 
     def _m_proposal_mark_applied(self, params):
@@ -265,6 +277,8 @@ class Tunnel:
                     pass
         self.log.info("transaction created: %s (proposal %s, %d change(s))",
                       txn["transaction_id"], pid, len(txn.get("after", [])))
+        self.events.emit("transaction.created",
+                         {"transaction_id": txn["transaction_id"], "proposal_id": pid})
         return {"transaction": txn}
 
     def _m_transaction_list(self, params):
@@ -321,6 +335,8 @@ class Tunnel:
                 except (KeyError, ValueError):
                     pass
         self.log.info("transaction rolled back: %s", tid)
+        self.events.emit("transaction.rolled_back",
+                         {"transaction_id": tid, "proposal_id": pid})
         return {"transaction": t}
 
     def _m_transaction_mark_failed(self, params):
@@ -350,6 +366,7 @@ class Tunnel:
         stored = self.results.update(result)
         self.log.info("result stored: %s (%d metrics)",
                       result["result_id"], len(result["metrics"]))
+        self.events.emit("result.updated", {"result_id": result["result_id"]})
         return {"result": result, "path": stored.get("path")}
 
     def _m_result_latest(self, params):
@@ -402,6 +419,8 @@ class Tunnel:
             raise JsonRpcError(UNKNOWN_ID, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
+        if run.get("status") == "done":
+            self.events.emit("run.done", {"run_id": rid})
         return {"run": run}
 
     def _m_run_attach(self, params):
@@ -438,7 +457,21 @@ class Tunnel:
         self.runs.link_result(rid, result["result_id"])
         run = self.runs.set_status(rid, "done")
         self.log.info("run %s imported result %s", rid, result["result_id"])
+        self.events.emit("result.updated", {"result_id": result["result_id"]})
+        self.events.emit("run.done", {"run_id": rid, "result_id": result["result_id"]})
         return {"run": run, "result": result}
+
+    # ---- event stream RPC methods ----
+    def _m_event_list(self, params):
+        since = int(params.get("since") or 0)
+        return self.events.list(since)
+
+    def _m_event_wait(self, params):
+        """Long-poll: block up to timeout_s for events with seq > since."""
+        since = int(params.get("since") or 0)
+        timeout = float(params.get("timeout_s") or 25.0)
+        timeout = min(max(timeout, 0.0), 55.0)   # clamp to keep threads bounded
+        return self.events.wait(since, timeout)
 
     def _m_tunnel_status(self, params):
         return {

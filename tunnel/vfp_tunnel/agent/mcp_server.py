@@ -88,6 +88,15 @@ def run_list(status: Optional[str] = None) -> list:
     return tools.run_list(status)
 
 
+@mcp.tool()
+def events(since: int = 0) -> dict:
+    """List tunnel activity events (proposal.created/approved/rejected/expired,
+    transaction.created/rolled_back, result.updated, run.done) with sequence
+    number > `since`. Returns {events, latest_seq, oldest_seq, boot_id}; poll
+    again with latest_seq to get only what is new."""
+    return tools.events(since)
+
+
 def main():
     mcp.run()
 
