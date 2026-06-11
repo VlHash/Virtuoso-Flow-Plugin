@@ -1,1 +1,3 @@
-"""Agent-facing tools and MCP server (skeleton)."""
+from . import tools
+
+__all__ = ["tools"]
