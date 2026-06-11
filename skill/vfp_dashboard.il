@@ -34,6 +34,9 @@ defun( vfpDashboardFields ()
     list( hiCreateButton(?name 'vfpBtnRefresh   ?buttonText "Refresh"   ?callback "vfpUpdateDashboard()")       218:320  96:26 )
     list( hiCreateButton(?name 'vfpBtnRollback  ?buttonText "Rollback"  ?callback "vfpMenuRollbackCB()")        322:320  96:26 )
     list( hiCreateButton(?name 'vfpBtnProposals ?buttonText "Proposals" ?callback "vfpFetchPendingProposals()") 426:320 100:26 )
+
+    list( hiCreateButton(?name 'vfpBtnReview    ?buttonText "Review"    ?callback "vfpMenuReviewCB()")          10:352  96:26 )
+    list( hiCreateButton(?name 'vfpBtnApply     ?buttonText "Apply"     ?callback "vfpMenuApplyCB()")           114:352  96:26 )
   )
 )
 

@@ -33,7 +33,8 @@ vfpInit()
   - VFP Tunnel connection status,
   - the current library / cell / view,
   - placeholders for ADE test and latest result,
-  - **Connect / Export / Refresh / Rollback** buttons.
+  - **Connect / Export / Refresh / Rollback / Proposals / Review / Apply**
+    buttons.
 
 Open a schematic, then click **Refresh** on the dashboard — the
 lib/cell/view fields update to the schematic you are editing.
@@ -54,10 +55,14 @@ With the tunnel running and an agent (or `scripts/vfp proposal create`)
 submitting proposals:
 
 - **Show Pending Proposals** lists the pending proposals in the dashboard
-  result area. `vfpShowProposal` opens a review form with **Approve /
-  Reject / Apply** buttons; each closes the form once it succeeds. Applying
-  an approved proposal writes the instance parameter(s) to the open
-  schematic and records a reversible transaction.
+  result area.
+- **Review Pending Proposal** (menu, or the dashboard **Review** button)
+  opens the review form on the first pending proposal, with **Approve /
+  Reject / Apply** buttons; each closes the form once it succeeds.
+- **Apply Approved Proposal** (menu, or the dashboard **Apply** button)
+  applies the first *approved* proposal: it writes the instance
+  parameter(s) to the open schematic and records a reversible
+  transaction. The usual loop is Review → Approve (form closes) → Apply.
 - **Rollback Last Transaction** restores the most recent applied change.
 - Importing a simulation result (`scripts/vfp result import ...`) and
   clicking **Refresh** renders the metrics and per-constraint pass/fail
