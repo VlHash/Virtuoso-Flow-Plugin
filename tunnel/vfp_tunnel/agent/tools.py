@@ -97,3 +97,9 @@ def run_list(status=None, host=None, port=None):
     failed)."""
     params = {"status": status} if status else {}
     return _call("run.list", params, host, port)["runs"]
+
+
+def events(since=0, host=None, port=None):
+    """Return tunnel events with seq > *since* (proposal/transaction/result/
+    run activity), plus latest_seq for incremental polling."""
+    return _call("event.list", {"since": since}, host, port)
