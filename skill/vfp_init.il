@@ -31,6 +31,7 @@ VFP_MODULES = '(
   "vfp_rpc_client.il"
   "vfp_context.il"
   "vfp_schematic.il"
+  "vfp_connectivity.il"
   "vfp_ade.il"
   "vfp_proposal.il"
   "vfp_transaction.il"
