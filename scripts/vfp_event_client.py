@@ -24,6 +24,10 @@ means "start from the latest event": the client fast-forwards its
 cursor and never replays history, so connecting does not trigger a
 refresh storm.
 
+``--session-id s_...`` is attached to every event RPC: the long-poll
+doubles as the session heartbeat (the tunnel touches the session's
+liveness on each call; see the M8 session-identity work).
+
 Python 3.6 compatible (design-server system python).
 """
 
@@ -78,6 +82,15 @@ def _endpoint(args):
     return host, int(port)
 
 
+def _rpc_params(args, since, timeout_s=None):
+    params = {"since": since}
+    if timeout_s is not None:
+        params["timeout_s"] = timeout_s
+    if args.session_id:
+        params["session_id"] = args.session_id
+    return params
+
+
 def run_real(args):
     from vfp_tunnel.rpc.jsonrpc import JsonRpcError
     from vfp_tunnel.rpc.transport import call
@@ -91,7 +104,7 @@ def run_real(args):
     # latest event so a fresh session never replays history.
     while True:
         try:
-            resp = call("event.list", {"since": max(since, 0)},
+            resp = call("event.list", _rpc_params(args, max(since, 0)),
                         host=host, port=port, timeout=10.0)
         except JsonRpcError as e:
             if e.code == METHOD_NOT_FOUND:
@@ -123,7 +136,7 @@ def run_real(args):
             if have_wait:
                 try:
                     resp = call("event.wait",
-                                {"since": since, "timeout_s": args.wait_timeout},
+                                _rpc_params(args, since, args.wait_timeout),
                                 host=host, port=port,
                                 timeout=args.wait_timeout + 10.0)
                 except JsonRpcError as e:
@@ -133,7 +146,7 @@ def run_real(args):
                     note("tunnel has no event.wait; polling event.list")
                     continue
             else:
-                resp = call("event.list", {"since": since},
+                resp = call("event.list", _rpc_params(args, since),
                             host=host, port=port, timeout=10.0)
             failures = 0
             for ev in resp.get("events", []):
@@ -158,6 +171,9 @@ def main(argv=None):
     ap.add_argument("--port", type=int)
     ap.add_argument("--since", type=int, default=0,
                     help="resume after this seq; 0 = start from latest")
+    ap.add_argument("--session-id", dest="session_id",
+                    help="attach this session id to every event RPC "
+                         "(long-poll doubles as the session heartbeat)")
     ap.add_argument("--interval", type=float, default=5.0,
                     help="event.list poll period when event.wait is unavailable")
     ap.add_argument("--wait-timeout", type=float, default=25.0,

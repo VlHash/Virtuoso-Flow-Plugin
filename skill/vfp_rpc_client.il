@@ -118,16 +118,38 @@ defun( vfpRpcCall (method @optional (params nil))
 )
 
 ;; ---- high-level operations -----------------------------------------
+;; Identity fingerprint of this Virtuoso process (M8): pid plus the kernel
+;; start-time token from /proc/self/stat. The token is opaque; equality
+;; distinguishes two processes that reused the same pid, and it is stable
+;; across plugin reloads. Returns list(pid start) of strings ("" off
+;; Linux, where /proc is absent).
+defun( vfpProcessFingerprint ()
+  let( (p line toks)
+    p = car(errset( infile("/proc/self/stat") ))
+    when( p
+      gets(line p)
+      close(p)
+    )
+    toks = parseString(or(line "") " ")
+    list( or(car(toks) "") or(nth(21 toks) "") )
+  )
+)
+
 defun( vfpConnect ()
-  let( (cv host res ok payload sid st sok spay)
+  let( (cv host fp res ok payload sid st sok spay)
     cv = vfpGetCurrentCellView()
     host = or(getShellEnvVar("HOSTNAME") getShellEnvVar("HOST") "")
+    fp = vfpProcessFingerprint()
     res = vfpRpcExec("session.register"
             list("--param" "client=virtuoso-flow-plugin"
                  "--param" strcat("lib="  if(cv cv~>libName ""))
                  "--param" strcat("cell=" if(cv cv~>cellName ""))
                  "--param" strcat("view=" if(cv cv~>viewName ""))
-                 "--param" strcat("host=" host)))
+                 "--param" strcat("host=" host)
+                 "--param" strcat("virtuoso_pid="   car(fp))
+                 "--param" strcat("virtuoso_start=" cadr(fp))
+                 "--param" strcat("display=" or(getShellEnvVar("DISPLAY") ""))
+                 "--param" strcat("cds_lib=" or(car(errset(ddGetStartup("cds.lib"))) ""))))
     ok = car(res)
     payload = cadr(res)
     if( ok
@@ -149,8 +171,11 @@ defun( vfpConnect ()
             vfpToStr(or(vfpAlistGet(spay "port") "?"))))
         )
         when( isCallable('vfpUpdateDashboard) vfpUpdateDashboard() )
-        ;; Start the tunnel→GUI event bridge (no-op if already running;
-        ;; the client exits quietly while the tunnel lacks event RPCs).
+        ;; (Re)start the tunnel→GUI event bridge so its long-poll carries
+        ;; the fresh session id — the long-poll doubles as the session
+        ;; heartbeat. The client exits quietly while the tunnel lacks
+        ;; event RPCs.
+        when( isCallable('vfpEventBridgeStop) errset(vfpEventBridgeStop()) )
         when( isCallable('vfpEventBridgeStart) errset(vfpEventBridgeStart()) )
         sid
       else

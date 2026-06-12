@@ -46,3 +46,10 @@ def test_real_mode_gives_up_when_tunnel_unreachable():
     assert proc.returncode == 1
     assert "giving up" in proc.stderr
     assert proc.stdout == ""
+
+
+def test_session_id_flag_is_accepted():
+    proc = _run("--mock", "--mock-count", "1", "--mock-interval", "0.01",
+                "--session-id", "s_test123456")
+    assert proc.returncode == 0
+    assert proc.stdout.startswith("VFP-EVT ")

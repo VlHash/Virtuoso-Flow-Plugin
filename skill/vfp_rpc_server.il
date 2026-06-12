@@ -23,11 +23,16 @@
 ;; with nested quotes fail silently (AGENTS.md), so this is built
 ;; unquoted; the repo and python paths must not contain spaces.
 defun( vfpEventClientCmd ()
-  or( vfpStateGet('eventClientCmd)
-      sprintf(nil
-        "env -u PYTHONHOME LD_LIBRARY_PATH= PYTHONPATH=%s %s %s/scripts/vfp_event_client.py --since %d"
-        vfpTunnelDir() vfpRpcPython() vfpRepoRoot()
-        or(vfpStateGet('eventLastSeq) 0))
+  let( (sid)
+    sid = vfpStateGet('sessionId)
+    or( vfpStateGet('eventClientCmd)
+        sprintf(nil
+          "env -u PYTHONHOME LD_LIBRARY_PATH= PYTHONPATH=%s %s %s/scripts/vfp_event_client.py --since %d%s"
+          vfpTunnelDir() vfpRpcPython() vfpRepoRoot()
+          or(vfpStateGet('eventLastSeq) 0)
+          ;; The long-poll doubles as the session heartbeat (M8).
+          if( sid sprintf(nil " --session-id %s" sid) ""))
+    )
   )
 )
 
