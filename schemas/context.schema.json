@@ -13,6 +13,11 @@
     "instances": { "type": "array", "items": { "$ref": "#/$defs/instance" } },
     "ports": { "type": "array", "items": { "$ref": "#/$defs/port" } },
     "nets": { "type": "array", "items": { "$ref": "#/$defs/net" } },
+    "connectivity_risks": {
+      "type": "array",
+      "description": "Auto-named, unlabeled nets that bear instance terminals. Their names are reassigned by schematic check after any rewiring, so consumers must not key on them. Pin with vfpPinNetLabel to clear.",
+      "items": { "$ref": "#/$defs/connectivity_risk" }
+    },
     "ade": { "$ref": "#/$defs/ade" },
     "last_result": {
       "type": "object",
@@ -62,6 +67,19 @@
       "properties": {
         "name": { "type": "string" },
         "sigType": { "type": "string" }
+      }
+    },
+    "connectivity_risk": {
+      "type": "object",
+      "required": ["net", "kind"],
+      "properties": {
+        "net": { "type": "string", "description": "The at-risk net name." },
+        "kind": { "type": "string", "enum": ["auto_net"], "description": "Why the net is fragile (auto_net = auto-named, unlabeled)." },
+        "terminals": {
+          "type": "array",
+          "description": "Instance terminals (inst.term) connected to this net.",
+          "items": { "type": "string" }
+        }
       }
     },
     "ade": {

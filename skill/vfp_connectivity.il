@@ -23,6 +23,19 @@ defun( vfpAutoNetP (name)
   and( stringp(name) rexMatchp("^net[0-9]+$" name) t )
 )
 
+;; Does the net carry an explicit wire label? That is what pins its name
+;; against schCheck renumbering. The label fig may be the figure itself or
+;; a child glued to a wire (schCreateWireLabel glues to the wire, so the
+;; label shows up under the wire's children). A net with an auto-style name
+;; but a real label IS pinned — name pattern alone does not decide it.
+defun( vfpNetLabeledP (net)
+  and( net
+       exists( f net~>figs
+               or( schIsWireLabel(f)
+                   exists(c f~>children schIsWireLabel(c)) ) )
+       t )
+)
+
 ;; Sheet coordinates of an instance terminal's pin: the master pin's
 ;; bBox center pushed through the instance transform. Works for wired
 ;; and floating terminals alike (master geometry, not instTerms).
@@ -236,6 +249,86 @@ defun( vfpConnDiffText (diffs)
             vfpToStr(car(d)) vfpToStr(cadr(d))
             vfpToStr(caddr(d)) vfpToStr(cadr(cddr(d)))) ) )
     "\n")
+)
+
+;; ---- auto-net risk flags (context export) ----------------------------
+;; The fragility (memory rfctsopa_autonet_label_fragility): a net Cadence
+;; auto-names "net8" is renumbered to "net32" the moment a wire is added or
+;; redrawn, so any proposal/profile keyed on "net8" silently misses. A net
+;; is at risk when its name is auto-style AND it carries no explicit wire
+;; label AND it actually bears instance terminals (load-bearing — an
+;; unconnected stub is not worth flagging). vfpPinNetLabel clears the flag.
+;;
+;; Returns a list of (netName (inst.term ...)) records, ordered by first
+;; appearance. Built off the snapshot's instance-terminal map, then the net
+;; object is consulted for the label check (the snapshot does not carry it).
+defun( vfpConnectivityRisks (cv)
+  let( (members risks net)
+    members = vfpConnNetMembers(vfpSnapshotConnectivity(cv))   ;; ((raw . (terms..)) ..)
+    risks = nil
+    foreach( e members
+      when( vfpAutoNetP(car(e))
+        net = car(setof(n cv~>nets n~>name == car(e)))
+        unless( vfpNetLabeledP(net)
+          risks = cons(list(car(e) reverse(cdr(e))) risks)
+        )
+      )
+    )
+    reverse(risks)
+  )
+)
+
+;; JSON-array form for the context export (vfpJArr of risk objects).
+defun( vfpConnRisksJ (cv)
+  apply('vfpJArr
+    foreach( mapcar r vfpConnectivityRisks(cv)
+      vfpJObj( "net"       car(r)
+               "kind"      "auto_net"
+               "terminals" apply('vfpJArr cadr(r)) ) ))
+)
+
+;; ---- pin an auto net to an explicit label ----------------------------
+;; "One-click" fix for the fragility above: glue a wire label so the name
+;; survives schCheck. Glues to one of the net's wire figs at the midpoint
+;; of its first segment. With newName the net is renamed to that label;
+;; without it the current (auto) name is pinned in place. Pass cv to act on
+;; a specific cellview (tests); defaults to the current edit cellview.
+;; Returns the label id, or nil after logging why (no cellview / net not
+;; found / no wire to glue to — a terminal-abutment net has no wire fig).
+defun( vfpPinNetLabel (netName @optional newName cv)
+  let( (net wire pts p0 p1 mid txt lbl)
+    cv   = or(cv vfpGetCurrentCellView())
+    net  = and(cv car(setof(n cv~>nets n~>name == netName)))
+    wire = and(net car(setof(f net~>figs f~>objType == "line")))
+    cond(
+      ( null(cv)
+        vfpError("vfpPinNetLabel: no editable cellview") )
+      ( null(net)
+        vfpError(sprintf(nil "vfpPinNetLabel: net %s not found" netName)) )
+      ( null(wire)
+        vfpError(sprintf(nil "vfpPinNetLabel: net %s has no wire to label" netName)) )
+      ( t
+        pts = wire~>points
+        p0  = car(pts)
+        p1  = cadr(pts)
+        mid = list( (xCoord(p0) + xCoord(p1)) / 2.0
+                    (yCoord(p0) + yCoord(p1)) / 2.0 )
+        txt = or(newName netName)
+        lbl = car(errset(
+                schCreateWireLabel(cv wire mid txt
+                  "lowerCenter" "R0" "stick" 0.0625 nil)))
+        if( lbl
+          then
+            errset(schCheck(cv))
+            dbSave(cv)
+            vfpLog(sprintf(nil "pinned net %s as label %s" netName txt))
+            lbl
+          else
+            vfpError(sprintf(nil "vfpPinNetLabel: could not label net %s" netName))
+        )
+      )
+    )
+  )
 )
 
 ;; Rebuild snapshot form from an RPC payload (the JSON object comes back
