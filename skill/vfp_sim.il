@@ -37,12 +37,18 @@ defun( vfpCellViewDirtyHier (cv)
 )
 
 ;; Canonical content string of the design inputs: the test name, every
-;; instance terminal's net, and every CDF parameter value, each list
-;; sorted so the string is order-independent. Identical design inputs =>
-;; identical string; any param or wire change moves it. Fed verbatim to
-;; job.create as inputs_fingerprint (the freshness guard compares by ==).
+;; instance terminal's net, and every instance's master + EXPLICIT params,
+;; each list sorted so the string is order-independent.
+;;
+;; Explicit params = inst~>prop (the overrides that actually reach the
+;; netlist), NOT the 200+ expanded CDF parameters — on a real 27-instance
+;; bench the full CDF blob was 25 KB, almost all of it untouched PDK
+;; defaults. Any edit lands in inst~>prop (verified: setting R0.r adds
+;; ("r" "9K")), so every CHANGE still moves the fingerprint; identical
+;; untouched defaults stay out, which is safe (same defaults => same sim).
+;; Fed verbatim to job.create as inputs_fingerprint (freshness guard == ).
 defun( vfpInputsFingerprint (cv @optional (test ""))
-  let( (terms params)
+  let( (terms parts)
     terms = nil
     when( cv
       foreach( inst cv~>instances
@@ -50,17 +56,18 @@ defun( vfpInputsFingerprint (cv @optional (test ""))
           terms = cons( sprintf(nil "%s.%s=%s" inst~>name it~>term~>name
                           if(it~>net it~>net~>name "")) terms ) ) ) )
     terms = sort(terms 'alphalessp)
-    params = nil
+    parts = nil
     when( cv
       foreach( inst cv~>instances
-        let( (cdf) cdf = car(errset( cdfGetInstCDF(inst) ))
-          when( cdf
-            foreach( p cdf~>parameters
-              params = cons( sprintf(nil "%s.%s=%s" inst~>name p~>name
-                               vfpToStr(p~>value)) params ) ) ) ) ) )
-    params = sort(params 'alphalessp)
+        let( (pp)
+          pp = nil
+          foreach( p inst~>prop
+            pp = cons( sprintf(nil "%s=%s" p~>name vfpToStr(p~>value)) pp ) )
+          parts = cons( sprintf(nil "%s:%s[%s]" inst~>name inst~>cellName
+                          buildString(sort(pp 'alphalessp) ",")) parts ) ) ) )
+    parts = sort(parts 'alphalessp)
     sprintf(nil "test=%s;conn=%s;params=%s"
-      vfpToStr(test) buildString(terms "|") buildString(params "|"))
+      vfpToStr(test) buildString(terms "|") buildString(parts "|"))
   )
 )
 
