@@ -33,19 +33,22 @@ defun( vfpRecordAfterState  (cv changes) vfpSnapshotJson(cv changes) )
 
 ;; ---- low-level create ----------------------------------------------
 ;; Send a transaction.create with before/after JSON arrays. Returns the
-;; (ok payload) pair from vfpRpcExec.
-defun( vfpCreateTransaction (proposalId lib cell beforeArr afterArr)
-  let( (json pf res)
-    json = vfpToJson( vfpJObj(
-      "transaction" vfpJObj(
-        "schema_version" "0.1"
-        "proposal_id"    proposalId
-        "status"         "applied"
-        "cellview"       vfpJObj("lib" lib "cell" cell "view" "schematic")
-        "before"         beforeArr
-        "after"          afterArr
-      )
-    ))
+;; (ok payload) pair from vfpRpcExec. connJ, when given, is a vfpJObj
+;; connectivity block (M11 audit: status/diff/pre-apply snapshot); the
+;; transaction schema leaves top-level additionalProperties open.
+defun( vfpCreateTransaction (proposalId lib cell beforeArr afterArr
+                             @optional (connJ nil))
+  let( (json pf res txn)
+    txn = vfpJObj(
+      "schema_version" "0.1"
+      "proposal_id"    proposalId
+      "status"         "applied"
+      "cellview"       vfpJObj("lib" lib "cell" cell "view" "schematic")
+      "before"         beforeArr
+      "after"          afterArr
+    )
+    when( connJ txn = append(txn list("connectivity" connJ)) )
+    json = vfpToJson( vfpJObj("transaction" txn) )
     pf = sprintf(nil "%s/txn_%d.json" vfpHelperOutDir() vfpRpcSeq())
     if( null(vfpWriteFile(pf json))
       then
@@ -77,7 +80,8 @@ defun( vfpRestoreFromChanges (cv changes)
 ;; the transaction. On a tunnel rejection the change is undone and the
 ;; proposal marked failed. Returns the transaction_id on success, else nil.
 defun( vfpApplyTransaction (proposal)
-  prog( (pid cvAlist lib cell changes cv beforeArr afterArr okAll res ok payload txnId)
+  prog( (pid cvAlist lib cell changes cv beforeArr afterArr okAll res ok payload txnId
+         connBefore connDiff connJ)
     pid     = vfpAlistGet(proposal "proposal_id")
     cvAlist = vfpAlistGet(proposal "cellview")
     lib     = vfpAlistGet(cvAlist "lib")
@@ -94,6 +98,9 @@ defun( vfpApplyTransaction (proposal)
       return(nil)
     )
 
+    ;; M11 connectivity audit: snapshot before touching anything.
+    connBefore = and( isCallable('vfpSnapshotConnectivity)
+                      vfpSnapshotConnectivity(cv) )
     beforeArr = vfpRecordBeforeState(cv changes)
 
     okAll = t
@@ -119,7 +126,22 @@ defun( vfpApplyTransaction (proposal)
     afterArr = vfpRecordAfterState(cv changes)
     vfpSaveCellView(cv)
 
-    res = vfpCreateTransaction(pid lib cell beforeArr afterArr)
+    ;; M11: a parameter apply must not move any terminal between nets.
+    ;; Record the verdict (and the pre-apply snapshot, for rollback
+    ;; verification) in the transaction; an unexpected topology change
+    ;; is surfaced in the log and the success dialog.
+    when( connBefore
+      connDiff = vfpConnectivityDiff(connBefore vfpSnapshotConnectivity(cv))
+      connJ = vfpJObj(
+        "status" if(connDiff "changed" "clean")
+        "diff"   vfpConnDiffJ(connDiff)
+        "before" vfpConnSnapJ(connBefore) )
+      when( connDiff
+        vfpError(sprintf(nil "unexpected connectivity change applying %s:\n%s"
+                  pid vfpConnDiffText(connDiff))) )
+    )
+
+    res = vfpCreateTransaction(pid lib cell beforeArr afterArr connJ)
     ok = car(res)
     payload = cadr(res)
     return(
@@ -128,7 +150,11 @@ defun( vfpApplyTransaction (proposal)
           txnId = vfpAlistGet(vfpAlistGet(payload "transaction") "transaction_id")
           vfpLog(sprintf(nil "applied proposal %s as transaction %s" pid txnId))
           hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
-            ?dboxText sprintf(nil "Applied proposal %s.\nTransaction: %s" pid txnId)
+            ?dboxText sprintf(nil "Applied proposal %s.\nTransaction: %s%s" pid txnId
+              if( connDiff
+                  sprintf(nil "\nWARNING - unexpected connectivity change:\n%s"
+                          vfpConnDiffText(connDiff))
+                  if( connBefore "\nConnectivity: clean" "" ) ))
             ?buttonLayout 'Close)
           when( isCallable('vfpFetchPendingProposals) vfpFetchPendingProposals() )
           txnId
@@ -153,7 +179,8 @@ defun( vfpApplyTransactionFor (transactionId) vfpNotImplemented("vfpApplyTransac
 ;; ---- rollback -------------------------------------------------------
 ;; Restore the "before" values recorded in a transaction, then confirm.
 defun( vfpRollbackTransaction (transactionId)
-  prog( (res ok payload txn restore cvAlist lib cell cv okAll)
+  prog( (res ok payload txn restore cvAlist lib cell cv okAll
+         connStored connDiff connNote)
     res = vfpRpcExec("transaction.rollback"
             list("--param" sprintf(nil "transaction_id=%s" transactionId)))
     ok = car(res)
@@ -188,6 +215,25 @@ defun( vfpRollbackTransaction (transactionId)
     )
     vfpSaveCellView(cv)
 
+    ;; M11: verify connectivity is back at the recorded pre-apply state
+    ;; (only for transactions that carry the snapshot; older ones skip).
+    connNote = ""
+    connStored = and( isCallable('vfpConnSnapFromJson)
+                      vfpConnSnapFromJson(
+                        vfpAlistGet(vfpAlistGet(txn "connectivity") "before")) )
+    when( connStored
+      connDiff = vfpConnectivityDiff(connStored vfpSnapshotConnectivity(cv))
+      if( connDiff
+        then
+          vfpError(sprintf(nil "rollback of %s: connectivity NOT restored:\n%s"
+                    transactionId vfpConnDiffText(connDiff)))
+          connNote = sprintf(nil "\nWARNING - connectivity NOT restored:\n%s"
+                       vfpConnDiffText(connDiff))
+        else
+          connNote = "\nConnectivity restored: verified."
+      )
+    )
+
     return(
       if( okAll
         then
@@ -195,7 +241,8 @@ defun( vfpRollbackTransaction (transactionId)
             list("--param" sprintf(nil "transaction_id=%s" transactionId)))
           vfpLog(sprintf(nil "rolled back transaction %s" transactionId))
           hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
-            ?dboxText sprintf(nil "Transaction %s rolled back." transactionId)
+            ?dboxText sprintf(nil "Transaction %s rolled back.%s"
+                        transactionId connNote)
             ?buttonLayout 'Close)
           when( isCallable('vfpUpdateDashboard) vfpUpdateDashboard() )
           t

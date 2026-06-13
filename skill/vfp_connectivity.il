@@ -190,21 +190,69 @@ defun( vfpConnAutoRenames (snapA snapB)
 )
 
 ;; ---- JSON ------------------------------------------------------------
+;; vfpJObj form of a snapshot — embeddable in larger JSON trees (the
+;; transaction record stores the pre-apply snapshot this way).
+defun( vfpConnSnapJ (snap)
+  vfpJObj(
+    "schema_version" "0.1"
+    "cellview" vfpAlistGet(snap "cellview")
+    "instances" apply('vfpJArr
+      foreach( mapcar r vfpAlistGet(snap "instances")
+        vfpJObj( "name" car(r) "master" cadr(r)
+                 "terms" apply('vfpJArr
+                   foreach( mapcar tn caddr(r)
+                     vfpJObj("term" car(tn) "net" cadr(tn)) )) )
+      ))
+    "named_nets" apply('vfpJArr vfpAlistGet(snap "named_nets"))
+    "auto_nets"  apply('vfpJArr vfpAlistGet(snap "auto_nets"))
+  )
+)
+
 defun( vfpConnectivityJson (cv)
-  let( (snap)
-    snap = vfpSnapshotConnectivity(cv)
-    vfpToJson( vfpJObj(
-      "schema_version" "0.1"
-      "cellview" vfpAlistGet(snap "cellview")
-      "instances" apply('vfpJArr
-        foreach( mapcar r vfpAlistGet(snap "instances")
-          vfpJObj( "name" car(r) "master" cadr(r)
-                   "terms" apply('vfpJArr
-                     foreach( mapcar tn caddr(r)
-                       vfpJObj("term" car(tn) "net" cadr(tn)) )) )
+  vfpToJson( vfpConnSnapJ( vfpSnapshotConnectivity(cv) ) )
+)
+
+;; Diff records as a JSON array form (kind/subject/before/after).
+defun( vfpConnDiffJ (diffs)
+  apply('vfpJArr
+    foreach( mapcar d diffs
+      vfpJObj( "kind"    vfpToStr(car(d))
+               "subject" vfpToStr(cadr(d))
+               "before"  caddr(d)
+               "after"   cadr(cddr(d)) ) ))
+)
+
+;; Human-readable one-line-per-record rendering for logs and dialogs.
+;; A terminal can change nets while the raw NAME stays the same (the
+;; net kept its name but lost/gained members) — say so rather than
+;; printing a confusing "net3 -> net3".
+defun( vfpConnDiffText (diffs)
+  buildString(
+    foreach( mapcar d diffs
+      if( and(caddr(d) equal(caddr(d) cadr(cddr(d))))
+          sprintf(nil "%s %s: %s membership changed"
+            vfpToStr(car(d)) vfpToStr(cadr(d)) vfpToStr(caddr(d)))
+          sprintf(nil "%s %s: %s -> %s"
+            vfpToStr(car(d)) vfpToStr(cadr(d))
+            vfpToStr(caddr(d)) vfpToStr(cadr(cddr(d)))) ) )
+    "\n")
+)
+
+;; Rebuild snapshot form from an RPC payload (the JSON object comes back
+;; from the tunnel as an alist of string keys). Inverse of vfpConnSnapJ;
+;; used by rollback verification against the stored pre-apply snapshot.
+defun( vfpConnSnapFromJson (j)
+  when( j
+    list(
+      list("cellview" vfpAlistGet(j "cellview"))
+      list("instances"
+        foreach( mapcar r vfpAlistGet(j "instances")
+          list( vfpAlistGet(r "name") vfpAlistGet(r "master")
+                foreach( mapcar tn vfpAlistGet(r "terms")
+                  list( vfpAlistGet(tn "term") vfpAlistGet(tn "net") ) ) )
         ))
-      "named_nets" apply('vfpJArr vfpAlistGet(snap "named_nets"))
-      "auto_nets"  apply('vfpJArr vfpAlistGet(snap "auto_nets"))
-    ))
+      list("named_nets" vfpAlistGet(j "named_nets"))
+      list("auto_nets"  vfpAlistGet(j "auto_nets"))
+    )
   )
 )
