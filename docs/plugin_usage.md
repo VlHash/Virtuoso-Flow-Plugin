@@ -64,6 +64,12 @@ submitting proposals:
   parameter(s) to the open schematic and records a reversible
   transaction. The usual loop is Review → Approve (form closes) → Apply.
 - **Rollback Last Transaction** restores the most recent applied change.
+  Apply and rollback now run a **connectivity audit**: apply records a
+  before/after connectivity snapshot in the transaction and warns if a
+  parameter write moved any terminal (otherwise the dialog shows
+  `Connectivity: clean`); rollback re-diffs the restored schematic
+  against the stored snapshot and reports `Connectivity restored:
+  verified.` or names any terminals that diverged.
 - Importing a simulation result (`scripts/vfp result import ...`) and
   clicking **Refresh** renders the metrics and per-constraint pass/fail
   verdict in the dashboard.
@@ -82,11 +88,23 @@ quietly and everything else keeps working. `vfpEventBridgeStart()` /
 `vfpEventBridgeStop()` control it manually; it is stopped by
 Disconnect and `vfpUnload()`.
 
+The event client also passes the current `--session-id` on every poll,
+which doubles as the session **heartbeat** (timers do not fire in this
+Virtuoso build, so the long-poll itself is the liveness signal). On
+**Connect**, `vfpConnect()` registers a process fingerprint
+(`virtuoso_pid` + a kernel start-time token) so a plugin reload reuses
+its existing tunnel session instead of creating a duplicate. Use
+`scripts/vfp doctor` on the tunnel host to see live sessions, their
+idle time, and any that have gone stale, and `scripts/vfp session reap`
+to drop dead ones.
+
 ## Status
 
-Milestones 1–7 are implemented and covered by the test suite (89 passing).
-The proposal apply → rollback flow and the result/constraint dashboard
-have been verified live in Virtuoso IC23.1. See
+Milestones 1–8, 11 (parts 1–2), and 13a are implemented and covered by
+the test suite. The proposal apply → rollback flow (with connectivity
+audit), the result/constraint dashboard, and the M8 session
+fingerprint / heartbeat / reap path have been verified live in Virtuoso
+IC23.1. See
 [`development_notes.md`](development_notes.md) for the roadmap and the
 proposal/transaction lifecycle.
 

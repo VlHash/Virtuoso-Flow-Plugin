@@ -22,12 +22,20 @@ dependency.
 | # | Milestone | Status |
 |---|-----------|--------|
 | 1 | Virtuoso plugin skeleton (menu, dashboard, lib/cell/view) | **done** |
-| 2 | VFP Tunnel (CLI, JSON-RPC, session) + SKILL bridge | **done** (Virtuoso Connect button needs a manual GUI test) |
-| 3 | Design context export | **done** (Virtuoso "Export Context" needs a GUI test) |
-| 4 | Proposal workflow | not started |
-| 5 | Transactional parameter modification + rollback | not started |
-| 6 | Result + constraint display | not started |
-| 7 | ADE/Spectre integration | not started |
+| 2 | VFP Tunnel (CLI, JSON-RPC, session) + SKILL bridge | **done** |
+| 3 | Design context export | **done** |
+| 4 | Proposal workflow | **done** |
+| 5 | Transactional parameter modification + rollback | **done** |
+| 6 | Result + constraint display | **done** |
+| 7 | ADE/Spectre integration | **done** |
+| 8 | Session identity: fingerprint dedup, heartbeat, reap, doctor | **done** |
+| 11 | Connectivity snapshot/diff + transaction connectivity audit | parts 1–2 **done** |
+| 13a | Transport hardening: error taxonomy + UTF-8 audit | **done** |
+
+Milestones verified live in Virtuoso IC23.1. M8 was verified end-to-end
+on 2026-06-13 (reconnect dedup, long-poll heartbeat, reap, `vfp doctor`).
+M9 (sim/job RPC), M10, and M12+ are not started; M11 continues beyond
+part 2 (pin/net lint, pre-apply checkpoint).
 
 ## Milestone 1 — what's implemented
 
@@ -132,6 +140,108 @@ to the context schema; CLI `context import`/`show` and the helper
 `--params-file` path work against a live daemon on both Windows 3.14 and
 the server's Python 3.6.8. **Not yet tested:** the in-Virtuoso "Export
 Context" button (needs the GUI / a real schematic).
+
+## Milestone 8 — session identity (fingerprint, heartbeat, reap, doctor)
+
+Make a session a stable identity so a plugin reload reuses its session
+instead of piling up duplicates, and so dead sessions can be detected and
+dropped. Split across the plugin (PR #21) and the tunnel (PR #23).
+
+Plugin side (`skill/vfp_rpc_client.il`, `scripts/vfp_event_client.py`):
+
+- `vfpProcessFingerprint()` — `pid` plus a kernel start-time token read
+  from `/proc/self/stat`. The token is opaque, stable across plugin
+  reloads, and distinguishes pid reuse (`""` off Linux).
+- `vfpConnect()` registers a composite identity — `virtuoso_pid`,
+  `virtuoso_start`, `display`, `cds_lib` alongside `host` — which the
+  registry persists verbatim.
+- **Heartbeat without timers.** `hiRegTimer` never fires in this build,
+  so the event client's long-poll doubles as the liveness signal:
+  `vfp_event_client.py` takes `--session-id` and attaches it to every
+  `event.list` / `event.wait`. `vfpConnect` restarts the bridge so a
+  reconnect's fresh session id reaches the client.
+
+Tunnel side (`tunnel/vfp_tunnel/session/registry.py`, `daemon.py`,
+`config.py`, `cli.py`):
+
+- **Fingerprint dedup.** Identity is `(virtuoso_pid, virtuoso_start)`. A
+  reload re-registering with the same fingerprint reuses the existing
+  session (`reconnects++`); a different pid — or the same pid with a
+  different start time — is a new session. Legacy clients (no
+  fingerprint) are never deduped.
+- **Heartbeat = the long-poll.** `event.list` / `event.wait` touch the
+  caller's `session_id`. A live long-poll is the liveness proof; the
+  bridge subprocess dies with Virtuoso, so its polling stops on death.
+- **Stale reap.** `registry.reap(max_idle_s)` drops dead sessions, via
+  the `session.reap` RPC and an opportunistic reap on register.
+  `config.session_ttl_s()` reads `VFP_SESSION_TTL_S` (default `0` = off).
+- **Observability.** `session.list` adds `idle_s`; new `vfp doctor`
+  (tunnel up? sessions with fingerprint / display / idle, flags stale)
+  and `vfp session reap` CLI commands.
+
+## Milestone 11 — connectivity snapshot, diff, and transaction audit
+
+Give VFP eyes on connectivity — the most expensive class of silent
+schematic failures (a reshaped symbol detaching a wire; manual rewiring
+renaming the auto nets automation depends on). Parts 1 (PR #22) and 2
+(PR #25); `skill/vfp_connectivity.il` is loaded via `VFP_MODULES`.
+
+Part 1 — snapshot + topology diff:
+
+- `vfpSnapshotConnectivity(cv)` — instance-terminal → net mapping plus
+  named / auto net classification (auto = `net<N>`).
+- `vfpConnectivityDiff(a b)` — structural diff. Named nets compare by
+  name; **auto nets compare by canonical member set**, because their
+  names are not stable: deleting and redrawing a wire makes `schCheck`
+  renumber (`net4` → `net1`) with the topology bit-for-bit identical. A
+  param-only edit diffs nil; a broken wire reports every affected
+  `inst.term` with its raw before/after nets.
+- `vfpConnAutoRenames(a b)` — pure auto-net renames (same member set,
+  new name) surfaced separately: the fragility signal for anything
+  referencing those names.
+- `vfpConnectivityJson(cv)` / `vfpConnSnapJ(snap)` — JSON forms for
+  context export and transaction-record embedding;
+  `vfpConnSnapFromJson(j)` rebuilds a snapshot from the stored JSON.
+- `vfpInstTermPoint(inst term)` — sheet coordinates of a terminal's pin.
+
+Part 2 — connectivity audit on apply / rollback (`skill/vfp_transaction.il`):
+
+- **Apply** snapshots connectivity before/after the parameter writes and
+  stores the verdict in the transaction record as a `connectivity` block
+  — `{status: clean|changed, diff, before: <snapshot>}`. (The schema's
+  top level has open `additionalProperties`, so existing readers are
+  unaffected.) A parameter-only apply that moves any terminal logs the
+  exact `inst.term` records and warns in the success dialog; the clean
+  case appends `Connectivity: clean`.
+- **Rollback** rebuilds the stored pre-apply snapshot and diffs it
+  against the post-restore extraction: clean → `Connectivity restored:
+  verified.`; divergence (a wire broken between apply and rollback) →
+  a warning naming the affected terminals. Pre-M11 transactions without
+  the block skip verification silently.
+
+Interface point for the tunnel side: emit an event when
+`transaction.create` arrives with `connectivity.status=changed`
+(roadmap "Task Marked / Task Push"). The plugin already records
+everything that piece needs.
+
+## Milestone 13a — error taxonomy + UTF-8 audit
+
+Transport hardening (PR #24) so M9's job RPC has a stable, named error
+taxonomy to branch on.
+
+- `tunnel/vfp_tunnel/rpc/errors.py` is the single home for error codes.
+  It re-exports the standard JSON-RPC codes and defines the application
+  codes in the server-reserved range (`-32000..-32099`):
+  `NOT_FOUND` `-32001`, `PERMISSION_DENIED` `-32002`, `INVALID_STATE`
+  `-32003`, `CONFLICT` `-32004`, `STALE` `-32005`. Reserved (do not
+  collide): `-32010..` session/connectivity, `-32020..` sim/job (M9),
+  `-32030..` results. `message_for(code)` gives a short label for logs.
+- The daemon imports `NOT_FOUND` / `PERMISSION_DENIED` from `errors` in
+  place of ad-hoc `-32001` literals — **same wire values**, no behaviour
+  change.
+- **UTF-8.** Every `open` / `read_text` / `write_text` in `tunnel/`
+  already passes `encoding="utf-8"` (and the wire is utf-8), so the
+  Windows-GBK risk is closed; a non-ASCII round-trip test guards it.
 
 ## SKILL implementation notes
 

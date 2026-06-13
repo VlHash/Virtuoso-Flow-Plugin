@@ -21,7 +21,7 @@ simulation results, and rolled back when needed.
 
 ## Current Status
 
-Milestones 1–7 are implemented.
+Milestones 1–8, 11 (parts 1–2), and 13a are implemented.
 
 | Milestone | Status |
 | --- | --- |
@@ -32,13 +32,19 @@ Milestones 1–7 are implemented.
 | Transactional parameter modification and rollback | Done |
 | Result and constraint display | Done |
 | ADE integration + run/artifact tracking | Done |
+| Session identity: fingerprint dedup, heartbeat, reap, doctor (M8) | Done |
+| Connectivity snapshot/diff + transaction connectivity audit (M11) | Parts 1–2 |
+| Transport hardening: error taxonomy + UTF-8 audit (M13a) | Done |
 
-All seven milestones are covered by the Python test suite (89 passing,
-5 skipped without `jsonschema`). The proposal apply → rollback flow, the
-result/constraint dashboard, and tunnel-side proposal expiry have also
-been verified live in Virtuoso IC23.1. Pending proposals that are never
-acted on are aged out to an `expired` status after a configurable TTL
-(default 5 minutes; set `VFP_PROPOSAL_TTL_S`).
+These milestones are covered by the Python test suite. The proposal
+apply → rollback flow (with connectivity audit), the result/constraint
+dashboard, tunnel-side proposal expiry, and the M8 session
+fingerprint / heartbeat / reap path have also been verified live in
+Virtuoso IC23.1. Pending proposals that are never acted on are aged out
+to an `expired` status after a configurable TTL (default 5 minutes; set
+`VFP_PROPOSAL_TTL_S`). Dead sessions can be aged out the same way via
+`VFP_SESSION_TTL_S` (default `0` = disabled) or dropped on demand with
+`scripts/vfp session reap`.
 
 ## Requirements
 
@@ -86,7 +92,8 @@ vfp tunnel start
 The default endpoint is `127.0.0.1:47891`. Override it with `VFP_HOST` and
 `VFP_PORT`. The artifact/session root defaults to `./.vfp`; override it
 with `VFP_HOME`. Pending proposals expire after `VFP_PROPOSAL_TTL_S`
-seconds (default `300`; set `0` to disable expiry).
+seconds (default `300`; set `0` to disable expiry). Idle sessions are
+auto-reaped after `VFP_SESSION_TTL_S` seconds (default `0` = disabled).
 
 ### Virtuoso plugin load
 
@@ -158,6 +165,8 @@ scripts/vfp tunnel status
 scripts/vfp ping
 scripts/vfp session list
 scripts/vfp session current
+scripts/vfp session reap                       # drop idle (dead) sessions
+scripts/vfp doctor                             # tunnel + session health
 scripts/vfp context show          # latest exported design context
 scripts/vfp context import --file <ctx.json>   # load a context (testing)
 scripts/vfp proposal list                      # design-change proposals
@@ -177,10 +186,12 @@ Run the Python tests from the repository root:
 pytest tests/
 ```
 
-Current verification (Milestones 1–7):
+Current verification (Milestones 1–8, 11, 13a):
 
-- `pytest tests/`: 89 passing, 5 skipped (the skips need optional
-  `jsonschema`). Run on the design server's Python 3.6.8.
+- `pytest tests/`: 134 passing, 1 skipped on Windows Python 3.14;
+  129 passing, 6 skipped on the design server's Python 3.6.8 (the skips
+  need optional `jsonschema`). Run `pytest tests` — a bare `pytest`
+  collects `gui_test/` and fails on import.
 - Full CLI smoke test on Windows Python 3.14 and the design server
   Python 3.6.8.
 - SKILL helper emits valid s-expressions for `tunnel.status`,
