@@ -50,9 +50,14 @@ defun( vfpRegisterMenu ()
   )
 )
 
-;; Post-install trigger: called with each newly opened schematic window.
-defun( vfpSchematicMenuTrigger (win)
-  vfpMaybeAddMenuToWindow(win)
+;; Post-install trigger. The design editor calls it with an args DPL
+;; (action, appName, libName, ... window), NOT the window itself —
+;; passing the DPL to vfpMaybeAddMenuToWindow made the editCellView
+;; guard nil out, so new windows silently never got the menu (verified
+;; live IC23.1: only windows already open at vfpRegisterMenu time had
+;; it, via the foreach pass below).
+defun( vfpSchematicMenuTrigger (args)
+  vfpMaybeAddMenuToWindow( args->window )
 )
 
 ;; Insert the menu into a window only if it is a graphic editor window
