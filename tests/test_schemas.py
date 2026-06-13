@@ -83,3 +83,47 @@ def test_context_bad_risk_kind_raises():
     }
     with pytest.raises(jsonschema.ValidationError):
         vfp_schemas.validate("context", bad)
+
+
+def test_context_with_tb_lint_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    ctx = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "tb_lint": [
+            {"kind": "floatingTerm", "subject": "R0.MINUS", "net": "net2"},
+            {"kind": "danglingSource", "subject": "V0.PLUS", "net": None},
+        ],
+    }
+    assert vfp_schemas.validate("context", ctx) is True
+
+
+def test_context_bad_lint_kind_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "tb_lint": [{"kind": "nope", "subject": "X.Y"}],
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("context", bad)
+
+
+def test_transaction_with_checkpoint_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    txn = {
+        "schema_version": "0.1",
+        "transaction_id": "t_abc123",
+        "status": "applied",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "before": [],
+        "after": [],
+        "checkpoint": {
+            "view": "schematic_vfpckpt_preapply_Jun_13_11_04_26_2026",
+            "created_at": "2026-06-13T11:04:26",
+        },
+    }
+    assert vfp_schemas.validate("transaction", txn) is True

@@ -37,7 +37,7 @@ defun( vfpRecordAfterState  (cv changes) vfpSnapshotJson(cv changes) )
 ;; connectivity block (M11 audit: status/diff/pre-apply snapshot); the
 ;; transaction schema leaves top-level additionalProperties open.
 defun( vfpCreateTransaction (proposalId lib cell beforeArr afterArr
-                             @optional (connJ nil))
+                             @optional (connJ nil) (ckptView nil))
   let( (json pf res txn)
     txn = vfpJObj(
       "schema_version" "0.1"
@@ -48,6 +48,8 @@ defun( vfpCreateTransaction (proposalId lib cell beforeArr afterArr
       "after"          afterArr
     )
     when( connJ txn = append(txn list("connectivity" connJ)) )
+    when( ckptView txn = append(txn list("checkpoint"
+            vfpJObj("view" ckptView "created_at" vfpIsoTime()))) )
     json = vfpToJson( vfpJObj("transaction" txn) )
     pf = sprintf(nil "%s/txn_%d.json" vfpHelperOutDir() vfpRpcSeq())
     if( null(vfpWriteFile(pf json))
@@ -81,7 +83,7 @@ defun( vfpRestoreFromChanges (cv changes)
 ;; proposal marked failed. Returns the transaction_id on success, else nil.
 defun( vfpApplyTransaction (proposal)
   prog( (pid cvAlist lib cell changes cv beforeArr afterArr okAll res ok payload txnId
-         connBefore connDiff connJ)
+         connBefore connDiff connJ ckptView)
     pid     = vfpAlistGet(proposal "proposal_id")
     cvAlist = vfpAlistGet(proposal "cellview")
     lib     = vfpAlistGet(cvAlist "lib")
@@ -97,6 +99,13 @@ defun( vfpApplyTransaction (proposal)
         list("--param" sprintf(nil "proposal_id=%s" pid)))
       return(nil)
     )
+
+    ;; M11 P4: checkpoint the whole cellview before any edit, so the
+    ;; pre-apply state (incl. unsaved manual edits the apply dbSave would
+    ;; co-save) is recoverable wholesale. Best-effort: a failed checkpoint
+    ;; does not block the apply.
+    ckptView = and( isCallable('vfpCheckpointCellView)
+                    vfpCheckpointCellView(cv "preapply") )
 
     ;; M11 connectivity audit: snapshot before touching anything.
     connBefore = and( isCallable('vfpSnapshotConnectivity)
@@ -141,7 +150,7 @@ defun( vfpApplyTransaction (proposal)
                   pid vfpConnDiffText(connDiff))) )
     )
 
-    res = vfpCreateTransaction(pid lib cell beforeArr afterArr connJ)
+    res = vfpCreateTransaction(pid lib cell beforeArr afterArr connJ ckptView)
     ok = car(res)
     payload = cadr(res)
     return(

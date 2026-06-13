@@ -77,6 +77,9 @@ defun( vfpExtractDesignContext ()
           ;; names. Guarded: vfp_connectivity.il loads after this module.
           "connectivity_risks" if( isCallable('vfpConnRisksJ)
                                     vfpConnRisksJ(cv) vfpJArr() )
+          ;; M11 P4: floating terminals / dead nets / dangling sources.
+          "tb_lint"        if( isCallable('vfpLintJson)
+                               vfpLintJson(cv) vfpJArr() )
           "ade"            vfpJObj("available" 'false)
           "last_result"    vfpJObj("available" 'false)
         )

@@ -349,3 +349,82 @@ defun( vfpConnSnapFromJson (j)
     )
   )
 )
+
+;; ---- testbench lint (M11 part 4) -------------------------------------
+;; The cheapest silent failure after a symbol reshape or a manual rewire is
+;; a terminal that quietly connects to nothing — the bench still simulates,
+;; the number is just wrong. One scan flags floating terminals, dead nets,
+;; and dangling stimulus sources.
+
+;; analogLib stimulus/source masters whose floating terminal deserves the
+;; louder "danglingSource" call-out (heuristic cellName match).
+defun( vfpSourceCellP (cellName)
+  and( stringp(cellName)
+       member( cellName
+         '("vsource" "isource" "vdc" "idc" "vsin" "isin" "vpulse" "ipulse"
+           "vpwl" "ipwl" "vexp" "iexp" "vsffm" "port" "vcvs" "vccs"
+           "cccs" "ccvs") )
+       t )
+)
+
+;; The net wired to inst's terminal `termName`, or nil if unwired.
+defun( vfpInstTermNet (inst termName)
+  let( (it)
+    it = car(setof(x inst~>instTerms x~>term~>name == termName))
+    and( it it~>net )
+  )
+)
+
+;; Connection points on a net: instance terminals plus top-level pins. A net
+;; with <=1 is degenerate — whatever sits on it goes nowhere.
+defun( vfpNetConnCount (net)
+  if( net plus(length(net~>instTerms) length(net~>term)) 0 )
+)
+
+;; Scan a (testbench) cellview for connectivity hazards. For every master
+;; terminal of every instance: it is floating when unwired (no instTerm) or
+;; wired to a degenerate net (<=1 connection point). On a stimulus source
+;; that becomes 'danglingSource, else 'floatingTerm. Returns records
+;;   (kind "inst.term" netName|nil)
+;; ordered by instance then terminal; nil when the bench is clean.
+defun( vfpLintTestbench (cv)
+  let( (issues)
+    issues = nil
+    foreach( inst cv~>instances
+      let( (isSrc)
+        isSrc = vfpSourceCellP(inst~>master~>cellName)
+        foreach( tname inst~>master~>terminals~>name
+          let( (net)
+            net = vfpInstTermNet(inst tname)
+            when( leqp(vfpNetConnCount(net) 1)
+              issues = cons(
+                list( if(isSrc 'danglingSource 'floatingTerm)
+                      sprintf(nil "%s.%s" inst~>name tname)
+                      and(net net~>name) )
+                issues )
+            )
+          )
+        )
+      )
+    )
+    reverse(issues)
+  )
+)
+
+;; JSON-array form for the context export / a lint RPC.
+defun( vfpLintJson (cv)
+  apply('vfpJArr
+    foreach( mapcar r vfpLintTestbench(cv)
+      vfpJObj( "kind"    vfpToStr(car(r))
+               "subject" cadr(r)
+               "net"     caddr(r) ) ))
+)
+
+;; One-line-per-issue rendering for logs and dialogs.
+defun( vfpLintText (issues)
+  buildString(
+    foreach( mapcar r issues
+      sprintf(nil "%s %s%s" vfpToStr(car(r)) cadr(r)
+        if(caddr(r) sprintf(nil " (net %s)" caddr(r)) " (unwired)")) )
+    "\n")
+)

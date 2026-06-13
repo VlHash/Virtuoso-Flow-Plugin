@@ -91,3 +91,25 @@ defun( vfpSaveCellView (cv)
 defun( vfpOpenSchematicForEdit (lib cell)
   car(errset( dbOpenCellViewByType(lib cell "schematic" "schematic" "a") ))
 )
+
+;; ---- pre-apply checkpoint (M11 part 4) ------------------------------
+;; Snapshot the whole cellview to a timestamped sibling view BEFORE an apply
+;; edits it. The apply's dbSave co-saves any unsaved manual edits the user
+;; had open (the M11 motivation), so the param-level rollback alone cannot
+;; always get the user back; this checkpoint can. Copies the in-memory cv
+;; (current state, including unsaved edits), so call it before touching
+;; anything. Returns the checkpoint view name, or nil on failure.
+defun( vfpCheckpointCellView (cv @optional (tag "preapply"))
+  let( (vn dst)
+    when( cv
+      vn  = sprintf(nil "schematic_vfpckpt_%s_%s" tag vfpCompactTime())
+      dst = car(errset( dbCopyCellView(cv cv~>libName cv~>cellName vn nil nil t) ))
+      if( dst
+        then vfpLog(sprintf(nil "checkpointed %s/%s to view %s"
+                             cv~>libName cv~>cellName vn)) vn
+        else vfpError(sprintf(nil "checkpoint of %s/%s failed"
+                               cv~>libName cv~>cellName)) nil
+      )
+    )
+  )
+)

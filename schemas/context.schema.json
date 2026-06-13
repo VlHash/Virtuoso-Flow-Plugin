@@ -18,6 +18,11 @@
       "description": "Auto-named, unlabeled nets that bear instance terminals. Their names are reassigned by schematic check after any rewiring, so consumers must not key on them. Pin with vfpPinNetLabel to clear.",
       "items": { "$ref": "#/$defs/connectivity_risk" }
     },
+    "tb_lint": {
+      "type": "array",
+      "description": "Testbench connectivity hazards found by vfpLintTestbench: floating terminals, dead nets, and dangling stimulus sources.",
+      "items": { "$ref": "#/$defs/tb_lint_issue" }
+    },
     "ade": { "$ref": "#/$defs/ade" },
     "last_result": {
       "type": "object",
@@ -80,6 +85,15 @@
           "description": "Instance terminals (inst.term) connected to this net.",
           "items": { "type": "string" }
         }
+      }
+    },
+    "tb_lint_issue": {
+      "type": "object",
+      "required": ["kind", "subject"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["floatingTerm", "danglingSource"], "description": "floatingTerm = terminal wired to nothing; danglingSource = the same on a stimulus source." },
+        "subject": { "type": "string", "description": "The offending instance terminal, as inst.term." },
+        "net": { "type": ["string", "null"], "description": "The degenerate net the terminal sits on, or null when unwired." }
       }
     },
     "ade": {

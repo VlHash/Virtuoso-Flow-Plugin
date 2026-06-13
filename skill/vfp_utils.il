@@ -148,3 +148,9 @@ defun( vfpWriteFile (path content)
 
 ;; Timestamp string for context payloads (any string is schema-valid).
 defun( vfpIsoTime () getCurrentTime() )
+
+;; getCurrentTime() -> "Jun 13 14:30:05 2026"; collapse to a cellview-name-
+;; safe token ("Jun_13_14_30_05_2026") for timestamped checkpoint views.
+defun( vfpCompactTime ()
+  buildString( parseString( getCurrentTime() " :" ) "_" )
+)

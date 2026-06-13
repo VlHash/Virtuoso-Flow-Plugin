@@ -20,6 +20,15 @@
     "linked_results": {
       "type": "array",
       "items": { "type": "string", "description": "result_id" }
+    },
+    "checkpoint": {
+      "type": "object",
+      "description": "Whole-cellview backup taken before the apply edited anything (a timestamped sibling view), recoverable beyond the param-level rollback.",
+      "required": ["view"],
+      "properties": {
+        "view": { "type": "string", "description": "The checkpoint cellview view name." },
+        "created_at": { "type": "string", "description": "ISO-8601 timestamp" }
+      }
     }
   },
   "$defs": {
