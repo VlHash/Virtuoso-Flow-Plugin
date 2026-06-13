@@ -57,3 +57,29 @@ def test_bad_proposal_raises():
     bad = {"schema_version": "0.1", "proposal_id": "p1", "status": "weird", "changes": []}
     with pytest.raises(jsonschema.ValidationError):
         vfp_schemas.validate("proposal", bad)
+
+
+def test_context_with_connectivity_risks_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    ctx = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "connectivity_risks": [
+            {"net": "net8", "kind": "auto_net", "terminals": ["M1.D", "M2.G"]},
+            {"net": "net32", "kind": "auto_net", "terminals": ["R0.PLUS"]},
+        ],
+    }
+    assert vfp_schemas.validate("context", ctx) is True
+
+
+def test_context_bad_risk_kind_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "connectivity_risks": [{"net": "net8", "kind": "bogus"}],
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("context", bad)

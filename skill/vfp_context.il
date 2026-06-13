@@ -72,6 +72,11 @@ defun( vfpExtractDesignContext ()
           "instances"      vfpExtractInstances(cv)
           "ports"          vfpExtractPorts(cv)
           "nets"           vfpExtractNets(cv)
+          ;; M11 P4: auto-named nets with no explicit label are fragile —
+          ;; flag the load-bearing ones so consumers do not key on their
+          ;; names. Guarded: vfp_connectivity.il loads after this module.
+          "connectivity_risks" if( isCallable('vfpConnRisksJ)
+                                    vfpConnRisksJ(cv) vfpJArr() )
           "ade"            vfpJObj("available" 'false)
           "last_result"    vfpJObj("available" 'false)
         )
