@@ -20,6 +20,7 @@ from .artifact.manager import RunStore
 from .constraints import engine as constraint_engine
 from .proposal.manager import ProposalStore
 from .rpc import schemas
+from .rpc.errors import NOT_FOUND, PERMISSION_DENIED
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
 from .rpc.transport import make_server
 from .session.registry import Registry
@@ -28,10 +29,6 @@ from .sim.metrics import make_result
 from .transaction import permissions as txn_permissions
 from .transaction.manager import TransactionStore
 from .transaction.model import make_transaction
-
-# Custom JSON-RPC error codes (server-defined range -32000..-32099).
-UNKNOWN_ID = -32001
-PERMISSION_DENIED = -32002
 
 
 def _iso(ts):
@@ -201,7 +198,7 @@ class Tunnel:
             raise JsonRpcError(INVALID_PARAMS, "params.proposal_id required")
         p = self.proposals.get(pid)
         if p is None:
-            raise JsonRpcError(-32001, "unknown proposal_id: %s" % pid)
+            raise JsonRpcError(NOT_FOUND, "unknown proposal_id: %s" % pid)
         return {"proposal": p}
 
     def _m_proposal_approve(self, params):
@@ -211,7 +208,7 @@ class Tunnel:
         try:
             p = self.proposals.approve(pid)
         except KeyError as e:
-            raise JsonRpcError(-32001, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal approved: %s", pid)
@@ -225,7 +222,7 @@ class Tunnel:
         try:
             p = self.proposals.reject(pid)
         except KeyError as e:
-            raise JsonRpcError(-32001, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal rejected: %s", pid)
@@ -239,7 +236,7 @@ class Tunnel:
         try:
             p = self.proposals.mark_applied(pid)
         except KeyError as e:
-            raise JsonRpcError(-32001, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal applied: %s", pid)
@@ -252,7 +249,7 @@ class Tunnel:
         try:
             p = self.proposals.mark_failed(pid)
         except KeyError as e:
-            raise JsonRpcError(-32001, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("proposal failed: %s", pid)
@@ -312,7 +309,7 @@ class Tunnel:
             raise JsonRpcError(INVALID_PARAMS, "params.transaction_id required")
         t = self.transactions.get(tid)
         if t is None:
-            raise JsonRpcError(UNKNOWN_ID, "unknown transaction_id: %s" % tid)
+            raise JsonRpcError(NOT_FOUND, "unknown transaction_id: %s" % tid)
         return {"transaction": t}
 
     def _m_transaction_rollback(self, params):
@@ -327,7 +324,7 @@ class Tunnel:
             raise JsonRpcError(INVALID_PARAMS, "params.transaction_id required")
         t = self.transactions.get(tid)
         if t is None:
-            raise JsonRpcError(UNKNOWN_ID, "unknown transaction_id: %s" % tid)
+            raise JsonRpcError(NOT_FOUND, "unknown transaction_id: %s" % tid)
         if t.get("status") != "applied":
             raise JsonRpcError(
                 INVALID_PARAMS,
@@ -342,7 +339,7 @@ class Tunnel:
         try:
             t = self.transactions.mark_rolled_back(tid)
         except KeyError as e:
-            raise JsonRpcError(UNKNOWN_ID, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         # Reflect the rollback on the originating proposal.
@@ -366,7 +363,7 @@ class Tunnel:
         try:
             t = self.transactions.mark_failed(tid)
         except KeyError as e:
-            raise JsonRpcError(UNKNOWN_ID, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         self.log.info("transaction marked failed: %s", tid)
@@ -426,7 +423,7 @@ class Tunnel:
             raise JsonRpcError(INVALID_PARAMS, "params.run_id required")
         run = self.runs.get(rid)
         if run is None:
-            raise JsonRpcError(UNKNOWN_ID, "unknown run_id: %s" % rid)
+            raise JsonRpcError(NOT_FOUND, "unknown run_id: %s" % rid)
         return {"run": run}
 
     def _m_run_set_status(self, params):
@@ -436,7 +433,7 @@ class Tunnel:
         try:
             run = self.runs.set_status(rid, params.get("status"))
         except KeyError as e:
-            raise JsonRpcError(UNKNOWN_ID, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         except ValueError as e:
             raise JsonRpcError(INVALID_PARAMS, str(e))
         if run.get("status") == "done":
@@ -455,7 +452,7 @@ class Tunnel:
         try:
             run = self.runs.attach_text(rid, label, filename, text)
         except KeyError as e:
-            raise JsonRpcError(UNKNOWN_ID, str(e))
+            raise JsonRpcError(NOT_FOUND, str(e))
         return {"run": run}
 
     def _m_run_import_result(self, params):
@@ -464,7 +461,7 @@ class Tunnel:
         if not rid:
             raise JsonRpcError(INVALID_PARAMS, "params.run_id required")
         if self.runs.get(rid) is None:
-            raise JsonRpcError(UNKNOWN_ID, "unknown run_id: %s" % rid)
+            raise JsonRpcError(NOT_FOUND, "unknown run_id: %s" % rid)
         metrics = params.get("metrics")
         if not isinstance(metrics, dict):
             raise JsonRpcError(INVALID_PARAMS, "params.metrics must be an object")
