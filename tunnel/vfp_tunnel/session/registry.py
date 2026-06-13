@@ -21,6 +21,19 @@ def _iso(ts):
     return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
 
 
+def _fingerprint(client):
+    """Stable identity of a Virtuoso process: (virtuoso_pid, virtuoso_start).
+
+    Returns None if the client did not report both (legacy plugins), in which
+    case sessions are never deduplicated.
+    """
+    if not isinstance(client, dict):
+        return None
+    pid = str(client.get("virtuoso_pid") or "").strip()
+    start = str(client.get("virtuoso_start") or "").strip()
+    return (pid, start) if (pid and start) else None
+
+
 class Registry:
     def __init__(self):
         self._sessions = {}
@@ -51,20 +64,61 @@ class Registry:
 
     # ---- operations ----
     def register(self, client):
-        sid = "s_" + uuid.uuid4().hex[:12]
+        """Register a client. If it carries the same (virtuoso_pid,
+        virtuoso_start) fingerprint as an existing session, reuse that session
+        (a plugin reload reconnects to the same record) instead of creating a
+        new one.
+        """
+        client = client or {}
+        fp = _fingerprint(client)
         ts = _now()
-        rec = {
-            "session_id": sid,
-            "client": client or {},
-            "created_at": _iso(ts),
-            "last_seen": _iso(ts),
-            "_created_ts": ts,
-            "_last_ts": ts,
-        }
         with self._lock:
-            self._sessions[sid] = rec
+            existing = None
+            if fp is not None:
+                for rec in self._sessions.values():
+                    if _fingerprint(rec.get("client")) == fp:
+                        existing = rec
+                        break
+            if existing is not None:
+                existing["client"] = client
+                existing["last_seen"] = _iso(ts)
+                existing["_last_ts"] = ts
+                existing["reconnects"] = existing.get("reconnects", 0) + 1
+                rec = existing
+            else:
+                sid = "s_" + uuid.uuid4().hex[:12]
+                rec = {
+                    "session_id": sid,
+                    "client": client,
+                    "created_at": _iso(ts),
+                    "last_seen": _iso(ts),
+                    "reconnects": 0,
+                    "_created_ts": ts,
+                    "_last_ts": ts,
+                }
+                self._sessions[sid] = rec
         self._persist(rec)
         return rec
+
+    def reap(self, max_idle_s):
+        """Remove sessions idle longer than *max_idle_s* seconds (a dead
+        Virtuoso stops heartbeating). Returns the removed session_ids. A
+        non-positive *max_idle_s* is a no-op.
+        """
+        if not max_idle_s or max_idle_s <= 0:
+            return []
+        cutoff = _now() - max_idle_s
+        with self._lock:
+            removed = [sid for sid, r in self._sessions.items()
+                       if r.get("_last_ts", 0) < cutoff]
+            for sid in removed:
+                del self._sessions[sid]
+        for sid in removed:
+            try:
+                (sessions_dir() / (sid + ".json")).unlink()
+            except OSError:
+                pass
+        return removed
 
     def touch(self, sid):
         with self._lock:

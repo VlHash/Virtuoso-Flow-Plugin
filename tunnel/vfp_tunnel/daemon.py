@@ -11,7 +11,8 @@ import threading
 import time
 
 from . import __version__
-from .config import ensure_dirs, resolve_host, resolve_port, state_file
+from .config import (ensure_dirs, resolve_host, resolve_port, session_ttl_s,
+                     state_file)
 from .design.context import ContextStore
 from .event.manager import EventLog
 from .logging_config import get_logger
@@ -64,6 +65,7 @@ class Tunnel:
         d.register("session.status", self._m_session_status)
         d.register("session.list", self._m_session_list)
         d.register("session.current", self._m_session_current)
+        d.register("session.reap", self._m_session_reap)
         d.register("design.context.update", self._m_context_update)
         d.register("design.context.get", self._m_context_get)
         d.register("tunnel.status", self._m_tunnel_status)
@@ -111,9 +113,12 @@ class Tunnel:
     # ---- RPC methods (each takes a params dict) ----
     def _m_session_register(self, params):
         client = params.get("client", {})
+        # Opportunistically drop dead sessions when a new one connects.
+        self.registry.reap(session_ttl_s())
         rec = self.registry.register(client)
         self.log.info("session registered: %s (%s)", rec["session_id"], client)
-        return {"session_id": rec["session_id"], "registered_at": rec["created_at"]}
+        return {"session_id": rec["session_id"], "registered_at": rec["created_at"],
+                "reconnects": rec.get("reconnects", 0)}
 
     def _m_session_ping(self, params):
         sid = params.get("session_id")
@@ -129,10 +134,25 @@ class Tunnel:
         return self.registry.public(rec)
 
     def _m_session_list(self, params):
-        return {"sessions": [self.registry.public(r) for r in self.registry.list()]}
+        now = time.time()
+        out = []
+        for r in self.registry.list():
+            pub = self.registry.public(r)
+            pub["idle_s"] = round(now - r.get("_last_ts", now), 1)
+            out.append(pub)
+        return {"sessions": out}
 
     def _m_session_current(self, params):
         return {"session": self.registry.public(self.registry.current())}
+
+    def _m_session_reap(self, params):
+        max_idle = params.get("max_idle_s")
+        if max_idle is None:
+            max_idle = session_ttl_s()
+        removed = self.registry.reap(float(max_idle) if max_idle else 0)
+        if removed:
+            self.log.info("reaped %d idle session(s)", len(removed))
+        return {"removed": removed, "count": len(removed)}
 
     def _m_context_update(self, params):
         context = params.get("context")
@@ -462,12 +482,21 @@ class Tunnel:
         return {"run": run, "result": result}
 
     # ---- event stream RPC methods ----
+    def _heartbeat(self, params):
+        """The event bridge passes its session_id on every poll; treat that as
+        the session's liveness heartbeat (timers are unavailable in SKILL)."""
+        sid = params.get("session_id")
+        if sid:
+            self.registry.touch(sid)
+
     def _m_event_list(self, params):
+        self._heartbeat(params)
         since = int(params.get("since") or 0)
         return self.events.list(since)
 
     def _m_event_wait(self, params):
         """Long-poll: block up to timeout_s for events with seq > since."""
+        self._heartbeat(params)
         since = int(params.get("since") or 0)
         timeout = float(params.get("timeout_s") or 25.0)
         timeout = min(max(timeout, 0.0), 55.0)   # clamp to keep threads bounded

@@ -16,6 +16,11 @@ DEFAULT_PORT = 47891
 # 0 (or negative) to disable expiry entirely.
 DEFAULT_PROPOSAL_TTL_S = 300
 
+# Sessions idle longer than this (no heartbeat) may be reaped. Heartbeat is
+# the event-bridge long-poll, so a dead Virtuoso stops touching within one
+# poll interval. Override with VFP_SESSION_TTL_S; 0 (default) = no auto-reap.
+DEFAULT_SESSION_TTL_S = 0
+
 
 def vfp_home():
     env = os.environ.get("VFP_HOME")
@@ -69,6 +74,17 @@ def proposal_ttl_s():
         return int(raw)
     except (TypeError, ValueError):
         return DEFAULT_PROPOSAL_TTL_S
+
+
+def session_ttl_s():
+    """Seconds a session may be idle before it can be reaped (0 = off)."""
+    raw = os.environ.get("VFP_SESSION_TTL_S")
+    if raw in (None, ""):
+        return DEFAULT_SESSION_TTL_S
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SESSION_TTL_S
 
 
 def resolve_host(host=None):

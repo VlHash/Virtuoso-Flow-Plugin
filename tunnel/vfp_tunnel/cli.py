@@ -149,6 +149,56 @@ def cmd_session_list(args):
     return 0
 
 
+def cmd_doctor(args):
+    """Diagnose the tunnel + sessions: is it up, who's connected, who's stale."""
+    host, port = _endpoint(args)
+    st = _probe(host, port)
+    if not st:
+        print("VFP Tunnel: NOT running (endpoint %s:%s)" % (host, port))
+        print("  -> start it with: vfp tunnel start")
+        return 1
+    print("VFP Tunnel: running  v%s  up %ss  pid %s  @ %s:%s"
+          % (st.get("version"), st.get("uptime_s"), st.get("pid"), host, port))
+    try:
+        sessions = call("session.list", {}, host=host, port=port).get("sessions", [])
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    if not sessions:
+        print("Sessions: none registered.")
+        return 0
+    stale = 0
+    print("Sessions: %d" % len(sessions))
+    for s in sessions:
+        c = s.get("client", {})
+        idle = s.get("idle_s", 0)
+        bad = idle > args.stale_after
+        stale += 1 if bad else 0
+        print("  %s  pid=%s start=%s display=%s  %s/%s/%s  idle=%ss%s%s"
+              % (s.get("session_id"),
+                 c.get("virtuoso_pid", "?"), c.get("virtuoso_start", "?"),
+                 c.get("display", "?"),
+                 c.get("lib", "?"), c.get("cell", "?"), c.get("view", "?"),
+                 idle,
+                 ("  reconnects=%s" % s["reconnects"]) if s.get("reconnects") else "",
+                 "  STALE" if bad else ""))
+    print("  -> %d stale (idle > %ss); reap with: vfp session reap"
+          % (stale, args.stale_after) if stale else "  all sessions live.")
+    return 0
+
+
+def cmd_session_reap(args):
+    host, port = _endpoint(args)
+    params = {}
+    if args.max_idle_s is not None:
+        params["max_idle_s"] = args.max_idle_s
+    try:
+        res = call("session.reap", params, host=host, port=port)
+    except (OSError, JsonRpcError) as e:
+        return _fail(e)
+    print("reaped %d session(s)" % res.get("count", 0))
+    return 0
+
+
 def cmd_session_current(args):
     host, port = _endpoint(args)
     try:
@@ -513,6 +563,17 @@ def build_parser():
     ssub.add_parser("list", help="list sessions").set_defaults(func=cmd_session_list)
     ssub.add_parser("current", help="show the most recent session").set_defaults(
         func=cmd_session_current)
+    sr = ssub.add_parser("reap", help="drop idle (dead) sessions")
+    sr.add_argument("--max-idle-s", dest="max_idle_s", type=float, default=None,
+                    help="idle threshold in seconds (default: VFP_SESSION_TTL_S)")
+    sr.set_defaults(func=cmd_session_reap)
+
+    doctor = groups.add_parser("doctor", help="diagnose tunnel + session health")
+    doctor.add_argument("--host")
+    doctor.add_argument("--port")
+    doctor.add_argument("--stale-after", dest="stale_after", type=float, default=120.0,
+                        help="flag sessions idle longer than this (seconds)")
+    doctor.set_defaults(func=cmd_doctor)
 
     context = groups.add_parser("context", help="design context")
     csub = context.add_subparsers(dest="cmd")
