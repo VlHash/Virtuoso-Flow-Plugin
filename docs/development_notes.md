@@ -29,13 +29,15 @@ dependency.
 | 6 | Result + constraint display | **done** |
 | 7 | ADE/Spectre integration | **done** |
 | 8 | Session identity: fingerprint dedup, heartbeat, reap, doctor | **done** |
-| 11 | Connectivity snapshot/diff + transaction connectivity audit | parts 1–2 **done** |
+| 9 | Sim job model + freshness guard + runner; netlist dirty-check + inputs fingerprint; real-spectre closed loop | **done** |
+| 11 | Connectivity snapshot/diff, txn connectivity audit, auto-net risk + pin, TB lint + pre-apply checkpoint, parameter blame chain + batch apply + rollback picker | parts 1–5 **done** |
 | 13a | Transport hardening: error taxonomy + UTF-8 audit | **done** |
 
-Milestones verified live in Virtuoso IC23.1. M8 was verified end-to-end
-on 2026-06-13 (reconnect dedup, long-poll heartbeat, reap, `vfp doctor`).
-M9 (sim/job RPC), M10, and M12+ are not started; M11 continues beyond
-part 2 (pin/net lint, pre-apply checkpoint).
+Milestones verified live in Virtuoso IC23.1: M8 reconnect/heartbeat/reap
+(2026-06-13); M11 P3–P5 + the M9 real-spectre closed loop on VNC
+(2026-06-14/15). M10 (result schema 0.2 + provenance + sim profile) and
+M12 (approval envelope + experiment ledger) are collab-led and not yet
+started. The **layout side** (below) is planned but not started.
 
 ## Milestone 1 — what's implemented
 
@@ -270,3 +272,38 @@ taxonomy to branch on.
 The Cadence SKILL reference for IC23.1 is bundled under
 `docs/IC231_gui_plugin_docs/` (skuiref = UI, sklangref = language,
 skdfref = design framework, etc.). Prefer it over guessing signatures.
+
+## Layout-side roadmap (planned, not started)
+
+VFP today is schematic-only. The layout side mirrors the schematic
+architecture and reuses the same proposal / transaction / context
+machinery. Phased by value vs. risk:
+
+- **L1 — Layout context export** (read-only, low risk). `layout_read_summary`
+  / `layout_read_geometry` → a layout block in the context payload: instance
+  placement (bbox), layer usage, shape/via counts, routed nets. Lets the
+  agent see the layout; reuses the context schema + store. The recommended
+  starting point.
+- **L2 — Layout geometry lint** (read-only analysis). Floating metal (shapes
+  on no net), unconnected device pins, off-grid shapes — geometry-based, not
+  a full DRC sign-off. The layout analogue of the testbench lint.
+- **L3 — Layout ↔ schematic consistency** (the differentiator). Compare the
+  layout's extracted nets against the schematic connectivity snapshot
+  (`vfpSnapshotConnectivity`) — an LVS-lite the agent can read. Needs layout
+  net extraction (geometry → net); medium complexity.
+- **L4 — Layout-edit transactions** (read-write, highest risk). Agent-
+  proposed routing / via / placement edits applied as reversible
+  transactions (layout checkpoint + diff), gated on DRC. Last.
+
+Split: the layout SKILL (read/write geometry) is ours; the tunnel
+context/proposal/transaction stores are reused, with any schema extension
+coordinated with collab.
+
+## Keeping docs current
+
+When a feature lands or a milestone closes, update the front-door docs in
+the SAME change — this file's milestone table sat at M8 while M9 and M11
+parts 3–5 shipped. Touch, as relevant: `README.md`, `docs/HANDOFF.md`, the
+milestone table above, and `docs/plugin_usage.md` (any new menu item or
+command the user invokes). The gitignored `AGENTS.md` / `TODO.md` are live
+scratch; the committed docs here are the front door.
