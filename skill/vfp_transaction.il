@@ -81,7 +81,10 @@ defun( vfpRestoreFromChanges (cv changes)
 ;; captures before, applies each change, captures after, saves, and records
 ;; the transaction. On a tunnel rejection the change is undone and the
 ;; proposal marked failed. Returns the transaction_id on success, else nil.
-defun( vfpApplyTransaction (proposal)
+;; quiet (M11 P5b): suppress the per-proposal modal dialogs so a batch
+;; apply (vfpApplyAllApproved) can run N proposals and summarise once.
+;; Default nil keeps the single-apply path (VNC-verified) unchanged.
+defun( vfpApplyTransaction (proposal @optional quiet)
   prog( (pid cvAlist lib cell changes cv beforeArr afterArr okAll res ok payload txnId
          connBefore connDiff connJ ckptView)
     pid     = vfpAlistGet(proposal "proposal_id")
@@ -92,9 +95,10 @@ defun( vfpApplyTransaction (proposal)
 
     cv = vfpOpenSchematicForEdit(lib cell)
     unless( cv
-      hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
-        ?dboxText sprintf(nil "Cannot open schematic %s/%s for edit." lib cell)
-        ?buttonLayout 'Close)
+      unless( quiet
+        hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
+          ?dboxText sprintf(nil "Cannot open schematic %s/%s for edit." lib cell)
+          ?buttonLayout 'Close) )
       vfpRpcExec("proposal.mark_failed"
         list("--param" sprintf(nil "proposal_id=%s" pid)))
       return(nil)
@@ -126,10 +130,11 @@ defun( vfpApplyTransaction (proposal)
       vfpRestoreFromChanges(cv changes)
       vfpRpcExec("proposal.mark_failed"
         list("--param" sprintf(nil "proposal_id=%s" pid)))
-      hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
-        ?dboxText sprintf(nil
-          "Apply failed: not every parameter could be set.\nChange reverted; proposal %s marked failed." pid)
-        ?buttonLayout 'Close)
+      unless( quiet
+        hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
+          ?dboxText sprintf(nil
+            "Apply failed: not every parameter could be set.\nChange reverted; proposal %s marked failed." pid)
+          ?buttonLayout 'Close) )
       return(nil)
     )
     afterArr = vfpRecordAfterState(cv changes)
@@ -158,13 +163,14 @@ defun( vfpApplyTransaction (proposal)
         then
           txnId = vfpAlistGet(vfpAlistGet(payload "transaction") "transaction_id")
           vfpLog(sprintf(nil "applied proposal %s as transaction %s" pid txnId))
-          hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
-            ?dboxText sprintf(nil "Applied proposal %s.\nTransaction: %s%s" pid txnId
-              if( connDiff
-                  sprintf(nil "\nWARNING - unexpected connectivity change:\n%s"
-                          vfpConnDiffText(connDiff))
-                  if( connBefore "\nConnectivity: clean" "" ) ))
-            ?buttonLayout 'Close)
+          unless( quiet
+            hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
+              ?dboxText sprintf(nil "Applied proposal %s.\nTransaction: %s%s" pid txnId
+                if( connDiff
+                    sprintf(nil "\nWARNING - unexpected connectivity change:\n%s"
+                            vfpConnDiffText(connDiff))
+                    if( connBefore "\nConnectivity: clean" "" ) ))
+              ?buttonLayout 'Close) )
           when( isCallable('vfpFetchPendingProposals) vfpFetchPendingProposals() )
           txnId
         else
@@ -173,11 +179,64 @@ defun( vfpApplyTransaction (proposal)
           vfpRestoreFromChanges(cv changes)
           vfpRpcExec("proposal.mark_failed"
             list("--param" sprintf(nil "proposal_id=%s" pid)))
-          hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
-            ?dboxText sprintf(nil "Apply rejected: %s\nChange reverted." vfpFmtError(payload))
-            ?buttonLayout 'Close)
+          unless( quiet
+            hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
+              ?dboxText sprintf(nil "Apply rejected: %s\nChange reverted." vfpFmtError(payload))
+              ?buttonLayout 'Close) )
           nil
       )
+    )
+  )
+)
+
+;; ---- batch apply (M11 part 5b) --------------------------------------
+;; Apply every approved proposal in one pass, quietly, then summarise once
+;; — high-frequency loops should not click N modal dialogs. Each proposal
+;; still becomes its own transaction (auditable + individually reversible);
+;; the heavy "auto-approve within an envelope" policy is M12 (collab).
+defun( vfpApplyAllApproved ()
+  let( (res ok payload proposals applied failed pid txnId)
+    res = vfpRpcExec("proposal.list" list("--param-json" "status=\"approved\""))
+    ok = car(res)
+    payload = cadr(res)
+    if( null(ok)
+      then
+        hiDisplayAppDBox(?name 'vfpErrDBox ?dboxBanner "Virtuoso Flow - Error"
+          ?dboxText sprintf(nil "Apply all failed (list):\n%s" vfpFmtError(payload))
+          ?buttonLayout 'Close)
+        nil
+      else
+        proposals = vfpAlistGet(payload "proposals")
+        if( null(proposals)
+          then
+            hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
+              ?dboxText "No approved proposals to apply."
+              ?buttonLayout 'Close)
+            nil
+          else
+            applied = nil
+            failed  = nil
+            foreach( p proposals
+              pid = vfpAlistGet(p "proposal_id")
+              ;; reuse vfpApplyProposal's get + approval gate, quietly
+              txnId = and( isCallable('vfpApplyProposal)
+                           vfpApplyProposal(pid t) )
+              if( txnId
+                then applied = cons(list(pid txnId) applied)
+                else failed  = cons(pid failed)
+              )
+            )
+            when( isCallable('vfpFetchPendingProposals) vfpFetchPendingProposals() )
+            when( isCallable('vfpUpdateDashboard) vfpUpdateDashboard() )
+            hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
+              ?dboxText sprintf(nil "Applied %d of %d approved proposal(s).%s"
+                length(applied) length(proposals)
+                if( failed
+                    sprintf(nil "\nFailed: %s" buildString(reverse(failed) ", "))
+                    "" ))
+              ?buttonLayout 'Close)
+            reverse(applied)
+        )
     )
   )
 )
@@ -358,4 +417,100 @@ defun( vfpParamHistoryJson (instName paramName)
       vfpJObj( "transaction_id" nth(0 h) "status"      nth(1 h)
                "timestamp"      nth(2 h) "proposal_id" nth(3 h)
                "before"         nth(4 h) "after"       nth(5 h) ) ))
+)
+
+;; ---- transaction listing (M11 P5b — rollback picker) ----------------
+;; One-line summary of a transaction's parameter changes, e.g.
+;; "R0.r: 1K->2K, R1.r: 5K->6K", built from after[] paired with before[].
+defun( vfpTxnSummary (tx)
+  buildString(
+    foreach( mapcar pa vfpAlistGet(tx "after")
+      let( (inst param bef)
+        inst  = vfpAlistGet(pa "instance")
+        param = vfpAlistGet(pa "param")
+        bef   = car(setof(pb vfpAlistGet(tx "before")
+                          vfpAlistMatch(pb inst param)))
+        sprintf(nil "%s.%s: %s->%s" inst param
+          vfpToStr(and(bef vfpAlistGet(bef "value")))
+          vfpToStr(vfpAlistGet(pa "value"))) ) )
+    ", ")
+)
+
+;; Transactions for a rollback picker / dashboard: newest-first records
+;; (tid status timestamp summary). Optional status filter (e.g. "applied").
+defun( vfpListTransactions (@optional status)
+  let( (res ok payload txns)
+    res = vfpRpcExec("transaction.list"
+            if(status list("--param-json"
+                  sprintf(nil "status=\"%s\"" status)) nil))
+    ok = car(res)
+    payload = cadr(res)
+    if( null(ok)
+      then nil
+      else
+        txns = vfpAlistGet(payload "transactions")
+        foreach( mapcar tx txns
+          list( vfpAlistGet(tx "transaction_id")
+                vfpAlistGet(tx "status")
+                vfpAlistGet(tx "timestamp")
+                vfpTxnSummary(tx) ) )
+    )
+  )
+)
+
+;; One line per transaction, for a log / picker label.
+defun( vfpListTransactionsText (@optional status)
+  buildString(
+    foreach( mapcar r vfpListTransactions(status)
+      sprintf(nil "%s [%s] %s  %s"
+        nth(0 r) vfpToStr(nth(1 r)) nth(2 r) nth(3 r)) )
+    "\n")
+)
+
+;; ---- rollback picker (M11 P5b) --------------------------------------
+;; Roll back ANY applied transaction, not just the last. The core
+;; vfpRollbackTransaction already takes any tid; this is the UI. The cyclic
+;; field choices are "tid  summary"; vfpRollbackSelected parses the tid
+;; back out of the chosen label.
+defun( vfpShowRollbackPicker ()
+  let( (txns labels form)
+    txns = vfpListTransactions("applied")
+    if( null(txns)
+      then
+        hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
+          ?dboxText "No applied transactions to roll back."
+          ?buttonLayout 'Close)
+        nil
+      else
+        labels = foreach( mapcar r txns
+                   sprintf(nil "%s  %s" nth(0 r) nth(3 r)) )
+        form = hiCreateAppForm(
+          ?name      'vfpRollbackForm
+          ?formTitle "Rollback Transaction"
+          ?fields list(
+            list( hiCreateMLTextField(?name 'vfpRbList
+                    ?value vfpListTransactionsText("applied")
+                    ?editable nil ?hasVerticalScrollbar t) 10:10 540:160 )
+            list( hiCreateCyclicField(?name 'vfpRbPick ?choices labels) 10:180 420:24 )
+            list( hiCreateButton(?name 'vfpRbDo ?buttonText "Rollback"
+                    ?callback "vfpRollbackSelected()") 10:212 100:28 )
+          )
+          ?buttonLayout 'Close
+        )
+        hiDisplayForm(form)
+        form
+    )
+  )
+)
+
+;; Read the picked tid out of the form's cyclic field and roll it back.
+defun( vfpRollbackSelected ()
+  let( (form sel tid)
+    form = hiGetCurrentForm()
+    sel  = and(form form->vfpRbPick->value)
+    tid  = and(sel stringp(sel) car(parseString(sel " ")))
+    when( tid
+      errset(hiFormCancel(form))
+      vfpRollbackTransaction(tid) )
+  )
 )
