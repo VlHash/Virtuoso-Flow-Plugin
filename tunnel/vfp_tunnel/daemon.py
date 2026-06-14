@@ -12,7 +12,7 @@ import time
 
 from . import __version__
 from .config import (ensure_dirs, resolve_host, resolve_port, session_ttl_s,
-                     state_file)
+                     sim_cmd, sim_metrics_file, sim_timeout_s, state_file)
 from .design.context import ContextStore
 from .event.manager import EventLog
 from .logging_config import get_logger
@@ -20,12 +20,13 @@ from .artifact.manager import RunStore
 from .constraints import engine as constraint_engine
 from .proposal.manager import ProposalStore
 from .rpc import schemas
-from .rpc.errors import NOT_FOUND, PERMISSION_DENIED
+from .rpc.errors import INVALID_STATE, NOT_FOUND, PERMISSION_DENIED
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
 from .rpc.transport import make_server
 from .session.registry import Registry
 from .sim.job import make_job
 from .sim.job_store import JobStore
+from .sim.runner import JobRunner
 from .sim.manager import ResultStore
 from .sim.metrics import make_result
 from .transaction import permissions as txn_permissions
@@ -104,6 +105,7 @@ class Tunnel:
         d.register("job.mark_running", self._m_job_mark_running)
         d.register("job.mark_done",   self._m_job_mark_done)
         d.register("job.mark_failed", self._m_job_mark_failed)
+        d.register("job.run",         self._m_job_run)
         # Event stream
         d.register("event.list", self._m_event_list)
         d.register("event.wait", self._m_event_wait)
@@ -543,6 +545,39 @@ class Tunnel:
         job = self._job_set("cancel", params)
         self.events.emit("job.cancelled", {"job_id": job["job_id"]})
         return {"job": job}
+
+    def _m_job_run(self, params):
+        """Execute a queued job with the server-configured simulator command.
+
+        The command comes from VFP_SIM_CMD only — never from the client — so
+        an agent cannot run arbitrary code. Runs in a background thread; the
+        client tracks completion via job.get or the event stream.
+        """
+        jid = params.get("job_id")
+        if not jid:
+            raise JsonRpcError(INVALID_PARAMS, "params.job_id required")
+        job = self.jobs.get(jid)
+        if job is None:
+            raise JsonRpcError(NOT_FOUND, "unknown job_id: %s" % jid)
+        if job.get("status") != "queued":
+            raise JsonRpcError(INVALID_STATE,
+                               "job %s is %s; only a queued job can be run"
+                               % (jid, job.get("status")))
+        cmd = sim_cmd()
+        if not cmd:
+            raise JsonRpcError(INVALID_PARAMS,
+                               "no simulator configured (set VFP_SIM_CMD)")
+        runner = JobRunner(self.jobs, self.results, self.runs, self.events)
+        threading.Thread(target=self._run_job_bg, args=(runner, jid, cmd),
+                         name="vfp-job-%s" % jid, daemon=True).start()
+        return {"job_id": jid, "started": True}
+
+    def _run_job_bg(self, runner, jid, cmd):
+        try:
+            runner.run(jid, cmd, metrics_file=sim_metrics_file(),
+                       timeout_s=sim_timeout_s())
+        except Exception as e:  # noqa: BLE001 - background thread guard
+            self.log.error("job runner crashed for %s: %s", jid, e)
 
     def _job_set(self, method, params, **fields):
         jid = params.get("job_id")

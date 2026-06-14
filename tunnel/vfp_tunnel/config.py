@@ -6,10 +6,13 @@ overridden with ``VFP_HOST`` / ``VFP_PORT``.
 """
 
 import os
+import shlex
 from pathlib import Path
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 47891
+DEFAULT_SIM_TIMEOUT_S = 600
+DEFAULT_SIM_METRICS_FILE = "metrics.json"
 
 # Pending proposals older than this many seconds are aged out to "expired"
 # (lazily, on the next list/get). Override with VFP_PROPOSAL_TTL_S; set to
@@ -90,6 +93,38 @@ def session_ttl_s():
         return int(raw)
     except (TypeError, ValueError):
         return DEFAULT_SESSION_TTL_S
+
+
+def sim_cmd():
+    """Argv for the simulator the job runner executes, from VFP_SIM_CMD.
+
+    Server-configured ONLY (never taken from an RPC client), so an agent
+    cannot inject an arbitrary command. Returns a list (shlex-split) or None
+    if unset. The command runs in the job's run dir and must write the metrics
+    file (see sim_metrics_file()).
+    """
+    raw = os.environ.get("VFP_SIM_CMD")
+    if not raw:
+        return None
+    try:
+        argv = shlex.split(raw)
+    except ValueError:
+        return None
+    return argv or None
+
+
+def sim_metrics_file():
+    return os.environ.get("VFP_SIM_METRICS_FILE") or DEFAULT_SIM_METRICS_FILE
+
+
+def sim_timeout_s():
+    raw = os.environ.get("VFP_SIM_TIMEOUT_S")
+    if raw in (None, ""):
+        return DEFAULT_SIM_TIMEOUT_S
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_SIM_TIMEOUT_S
 
 
 def resolve_host(host=None):
