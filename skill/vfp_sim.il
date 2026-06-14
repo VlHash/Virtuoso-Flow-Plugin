@@ -104,3 +104,62 @@ defun( vfpSimPreflightJson (cv @optional (test ""))
     )
   )
 )
+
+;; ---- run a sim job (M9 closed loop) ---------------------------------
+;; Pre-flight (dirty-check + content fingerprint), then create + run a sim
+;; job on the tunnel. The fingerprint is ours (content-based), so the
+;; tunnel's freshness guard reuses a prior *done* job for identical inputs
+;; instead of re-running — we detect that by the returned job already being
+;; "done" (a fresh create returns "queued", which we then job.run). Refuses
+;; a dirty cellview so we never sim a stale netlist. Returns (job_id reused)
+;; or nil.
+defun( vfpRunSimJob (cv @optional (test "tran"))
+  prog( (pf jjson pfile res ok payload job jid jstatus rr)
+    unless( cv
+      vfpError("vfpRunSimJob: no cellview")
+      return(nil) )
+    pf = vfpSimPreflight(cv test)
+    when( vfpAlistGet(pf "dirty")
+      vfpError(vfpAlistGet(pf "reason"))
+      return(nil) )
+    jjson = vfpToJson( vfpJObj("job" vfpJObj(
+              "cellview" vfpJObj("lib"  cv~>libName
+                                 "cell" cv~>cellName
+                                 "view" cv~>viewName)
+              "test"               test
+              "inputs_fingerprint" vfpAlistGet(pf "fingerprint"))) )
+    pfile = sprintf(nil "%s/job_%d.json" vfpHelperOutDir() vfpRpcSeq())
+    unless( vfpWriteFile(pfile jjson)
+      vfpError("vfpRunSimJob: could not write job file")
+      return(nil) )
+    res = vfpRpcExec("job.create" list("--params-file" pfile))
+    errset(deleteFile(pfile))
+    ok = car(res)
+    payload = cadr(res)
+    unless( ok
+      vfpError(sprintf(nil "job.create failed: %s" vfpFmtError(payload)))
+      return(nil) )
+    job     = vfpAlistGet(payload "job")
+    jid     = vfpAlistGet(job "job_id")
+    jstatus = vfpAlistGet(job "status")
+    ;; a reused done job needs no run
+    when( equal(jstatus "done")
+      vfpLog(sprintf(nil "reused fresh job %s (identical inputs)" jid))
+      return(list(jid t)) )
+    rr = vfpRpcExec("job.run" list("--param" sprintf(nil "job_id=%s" jid)))
+    return(
+      if( car(rr)
+        then vfpLog(sprintf(nil "started sim job %s" jid)) list(jid nil)
+        else vfpError(sprintf(nil "job.run failed: %s" vfpFmtError(cadr(rr)))) nil
+      )
+    )
+  )
+)
+
+;; Current status of a job (queued/running/done/failed/cancelled) or nil.
+defun( vfpJobStatus (jid)
+  let( (res)
+    res = vfpRpcExec("job.get" list("--param" sprintf(nil "job_id=%s" jid)))
+    and( car(res) vfpAlistGet(vfpAlistGet(cadr(res) "job") "status") )
+  )
+)
