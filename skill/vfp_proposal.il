@@ -221,7 +221,9 @@ defun( vfpRejectProposal (proposalId)
 ;; Apply an *approved* proposal. The actual schematic edit + reversible
 ;; transaction recording live in vfp_transaction.il (vfpApplyTransaction);
 ;; this function fetches the proposal and enforces the approval gate.
-defun( vfpApplyProposal (proposalId)
+;; quiet (M11 P5b): suppress modal dialogs + form-close so a batch caller
+;; (vfpApplyAllApproved) can drive many proposals and summarise once.
+defun( vfpApplyProposal (proposalId @optional quiet)
   prog( (ret ok payload proposal status)
     ;; 1. Fetch the full proposal record.
     ret     = vfpRpcExec("proposal.get"
@@ -229,11 +231,12 @@ defun( vfpApplyProposal (proposalId)
     ok      = car(ret)
     payload = cadr(ret)
     unless( ok
-      hiDisplayAppDBox(
-        ?name    'vfpErrDBox
-        ?dboxBanner "Virtuoso Flow - Error"
-        ?dboxText sprintf(nil "Apply failed (get):\n%s" vfpFmtError(payload))
-        ?buttonLayout 'Close)
+      unless( quiet
+        hiDisplayAppDBox(
+          ?name    'vfpErrDBox
+          ?dboxBanner "Virtuoso Flow - Error"
+          ?dboxText sprintf(nil "Apply failed (get):\n%s" vfpFmtError(payload))
+          ?buttonLayout 'Close) )
       return(nil)
     )
 
@@ -242,12 +245,13 @@ defun( vfpApplyProposal (proposalId)
 
     ;; 2. Enforce the approval gate: only approved proposals may be applied.
     unless( equal(status "approved")
-      hiDisplayAppDBox(
-        ?name    'vfpInfoDBox
-        ?dboxBanner "Virtuoso Flow"
-        ?dboxText sprintf(nil "Proposal %s is '%s'.\nApprove it before applying."
-                    proposalId status)
-        ?buttonLayout 'Close)
+      unless( quiet
+        hiDisplayAppDBox(
+          ?name    'vfpInfoDBox
+          ?dboxBanner "Virtuoso Flow"
+          ?dboxText sprintf(nil "Proposal %s is '%s'.\nApprove it before applying."
+                      proposalId status)
+          ?buttonLayout 'Close) )
       return(nil)
     )
 
@@ -255,9 +259,9 @@ defun( vfpApplyProposal (proposalId)
     return(
       let( (res)
         res = if( isCallable('vfpApplyTransaction)
-                then vfpApplyTransaction(proposal)
+                then vfpApplyTransaction(proposal quiet)
                 else vfpNotImplemented("vfpApplyTransaction") )
-        when( res vfpCloseProposalForm() )
+        when( and(res null(quiet)) vfpCloseProposalForm() )
         res
       )
     )
