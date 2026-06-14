@@ -282,3 +282,80 @@ defun( vfpGetLastTransaction ()
     )
   )
 )
+
+;; ---- parameter history / blame chain (M11 part 5) -------------------
+;; "When did R1.r change, and to what?" — the archaeology that cost a day
+;; on the 996µA ghost regression. Aggregates every transaction that set a
+;; given (instance, param) into a time-ordered chain. Pure read over the
+;; existing transaction.list (no new RPC). Sort oldest-first by the ISO
+;; timestamp (lexical order = chronological); do NOT just reverse the list,
+;; because same-second timestamps make transaction.list fall back to insert
+;; order, which reversing would flip. Each record:
+;;   (transaction_id status timestamp proposal_id beforeVal afterVal)
+;; NOTE: timestamps are second-granular — sub-second bursts of edits to the
+;; same param order by insertion (stable sort) but cannot be distinguished
+;; precisely; a created_ts epoch on the txn (tunnel) would tighten this.
+defun( vfpAlistMatch (pv instName paramName)
+  and( equal(vfpAlistGet(pv "instance") instName)
+       equal(vfpAlistGet(pv "param") paramName) )
+)
+
+defun( vfpTxnTimeLess (a b)
+  alphalessp( vfpToStr(vfpAlistGet(a "timestamp"))
+              vfpToStr(vfpAlistGet(b "timestamp")) )
+)
+
+defun( vfpParamHistory (instName paramName)
+  let( (res ok payload txns hits)
+    res = vfpRpcExec("transaction.list" nil)
+    ok = car(res)
+    payload = cadr(res)
+    if( null(ok)
+      then nil
+      else
+        txns = vfpAlistGet(payload "transactions")
+        ;; keep only transactions whose after[] sets this inst.param,
+        ;; oldest-first by timestamp
+        hits = sort( setof( tx txns
+                 exists( pv vfpAlistGet(tx "after")
+                         vfpAlistMatch(pv instName paramName) ) )
+                 'vfpTxnTimeLess )
+        foreach( mapcar tx hits
+          let( (pvA pvB)
+            pvA = car(setof(pv vfpAlistGet(tx "before")
+                            vfpAlistMatch(pv instName paramName)))
+            pvB = car(setof(pv vfpAlistGet(tx "after")
+                            vfpAlistMatch(pv instName paramName)))
+            list( vfpAlistGet(tx "transaction_id")
+                  vfpAlistGet(tx "status")
+                  vfpAlistGet(tx "timestamp")
+                  vfpAlistGet(tx "proposal_id")
+                  and(pvA vfpAlistGet(pvA "value"))
+                  and(pvB vfpAlistGet(pvB "value")) ) ) )
+    )
+  )
+)
+
+;; "R1.r: 1K -> 2K -> 2.5K" — the before of the first change, then each
+;; after in order. nil history => a clear "no recorded changes".
+defun( vfpParamHistoryText (instName paramName)
+  let( (hist parts)
+    hist = vfpParamHistory(instName paramName)
+    if( null(hist)
+      then sprintf(nil "%s.%s: no recorded changes" instName paramName)
+      else
+        parts = cons( vfpToStr(nth(4 car(hist)))
+                      foreach(mapcar h hist vfpToStr(nth(5 h))) )
+        sprintf(nil "%s.%s: %s" instName paramName buildString(parts " -> "))
+    )
+  )
+)
+
+;; JSON-array form (one object per change) for a history RPC / dashboard.
+defun( vfpParamHistoryJson (instName paramName)
+  apply('vfpJArr
+    foreach( mapcar h vfpParamHistory(instName paramName)
+      vfpJObj( "transaction_id" nth(0 h) "status"      nth(1 h)
+               "timestamp"      nth(2 h) "proposal_id" nth(3 h)
+               "before"         nth(4 h) "after"       nth(5 h) ) ))
+)
