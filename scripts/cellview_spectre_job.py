@@ -117,17 +117,28 @@ def netlist(job):
 
 
 def netlist_via_reuse(job):
-    """Reuse a prebuilt deck (e.g. one ADE/Maestro already generated for this
-    cellview — inv_tb has one). VFP_REUSE_NETLIST points at the .scs; otherwise
-    look for <run_dir>/input.scs. The deck must already resolve PDK
-    models/corners (it does if ADE built it)."""
+    """Sim a complete deck assembled upstream (attended createNetlist or a
+    delegated headless service). Resolution order:
+      1. VFP_REUSE_NETLIST — an explicit deck path.
+      2. attended convention — the in-session netlister (vfpNetlistCellView)
+         writes the fresh deck under $VFP_NETLIST_DIR/<lib>__<cell>__<view>/
+         netlist/input.scs, so the wrapper derives it from the F.1 cellview env
+         with no per-job plumbing (zero collab change).
+      3. <run_dir>/input.scs — a deck handed straight into the run dir.
+    The deck must already resolve PDK models/corners (ADE/maestro decks do)."""
     p = os.environ.get("VFP_REUSE_NETLIST")
     if p and os.path.exists(p):
         return p
+    base = os.environ.get("VFP_NETLIST_DIR")
+    if base and job["lib"] and job["cell"] and job["view"]:
+        key = "%s__%s__%s" % (job["lib"], job["cell"], job["view"])
+        cand = os.path.join(base, key, "netlist", "input.scs")
+        if os.path.exists(cand):
+            return cand
     cand = os.path.join(job["run_dir"], "input.scs")
     if os.path.exists(cand):
         return cand
-    raise RuntimeError("reuse netlist not found (set VFP_REUSE_NETLIST)")
+    raise RuntimeError("reuse netlist not found (set VFP_REUSE_NETLIST or VFP_NETLIST_DIR)")
 
 
 def netlist_via_si(job):

@@ -112,6 +112,22 @@ def test_read_job_env_first_then_jobjson(tmp_path, monkeypatch):
     assert job["view"] == "schematic"
 
 
+def test_reuse_convention_path_from_netlist_dir(tmp_path, monkeypatch):
+    # attended: vfpNetlistCellView writes <base>/<lib>__<cell>__<view>/netlist/
+    # input.scs; the wrapper derives it from VFP_NETLIST_DIR + the cellview env,
+    # with no explicit VFP_REUSE_NETLIST (zero per-job plumbing).
+    base = tmp_path / "nl"
+    deckdir = base / "Project__inv_tb__schematic" / "netlist"
+    deckdir.mkdir(parents=True)
+    deck = deckdir / "input.scs"
+    deck.write_text("simulator lang=spectre\n", encoding="utf-8")
+    monkeypatch.delenv("VFP_REUSE_NETLIST", raising=False)
+    monkeypatch.setenv("VFP_NETLIST_DIR", str(base))
+    job = {"run_dir": str(tmp_path), "lib": "Project",
+           "cell": "inv_tb", "view": "schematic"}
+    assert cj.netlist_via_reuse(job) == str(deck)
+
+
 def test_netlist_defaults_to_reuse(tmp_path, monkeypatch):
     deck = tmp_path / "d.scs"
     deck.write_text("simulator lang=spectre\n", encoding="utf-8")

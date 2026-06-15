@@ -105,6 +105,63 @@ defun( vfpSimPreflightJson (cv @optional (test ""))
   )
 )
 
+;; ---- M10b attended netlist: assemble a complete deck in this session ----
+;; The VFP loop must sim the CURRENT design, never a stale netlist. A complete
+;; spectre deck (design + PDK models + analyses + options) only comes from the
+;; ADE/maestro netlister, so we trigger maeCreateNetlistForCorner INSIDE this
+;; live Virtuoso session — reusing the session's framework license (no separate
+;; `si`/Virtuoso checkout). The headless wrapper then sims the deck.
+
+;; Base dir for attended netlists; the wrapper derives the same per-cellview
+;; path, so override BOTH with the shared VFP_NETLIST_DIR env.
+defun( vfpNetlistDir ()
+  or( getShellEnvVar("VFP_NETLIST_DIR") "/tmp/vfp_nl" )
+)
+
+;; Per-cellview deck dir, matching the wrapper convention
+;; <base>/<lib>__<cell>__<view> (maeCreateNetlistForCorner writes
+;; <dir>/netlist/input.scs under it).
+defun( vfpNetlistCvDir (cv)
+  sprintf(nil "%s/%s__%s__%s" vfpNetlistDir() cv~>libName cv~>cellName cv~>viewName)
+)
+
+;; Assemble a complete deck for cv via its maestro session; return the deck
+;; path (<dir>/netlist/input.scs) or nil. Best-effort: needs the mae* API and a
+;; maestro setup on cv's cell. Opens a background session and always closes it
+;; (force) so no edit lock leaks.
+defun( vfpNetlistCellView (cv @key (corner "Nominal"))
+  prog( (lib cell od session test deck)
+    unless( cv vfpError("vfpNetlistCellView: no cellview") return(nil) )
+    unless( fboundp('maeCreateNetlistForCorner)
+      vfpError("vfpNetlistCellView: mae* netlister unavailable")
+      return(nil) )
+    lib  = cv~>libName
+    cell = cv~>cellName
+    unless( and(lib cell cv~>viewName)
+      vfpError("vfpNetlistCellView: incomplete cellview")
+      return(nil) )
+    od = vfpNetlistCvDir(cv)
+    errset( system(sprintf(nil "rm -rf '%s'" od)) )
+    session = car(errset( maeOpenSetup(lib cell "maestro") ))
+    unless( and(session stringp(session))
+      vfpError(sprintf(nil "vfpNetlistCellView: maeOpenSetup failed for %s/%s" lib cell))
+      return(nil) )
+    test = car(errset( car(maeGetSetup(?session session)) ))
+    when( test
+      errset( maeCreateNetlistForCorner(test corner od ?session session) ) )
+    errset( maeCloseSession(?session session ?forceClose t) )
+    unless( test
+      vfpError("vfpNetlistCellView: no test in maestro setup")
+      return(nil) )
+    deck = sprintf(nil "%s/netlist/input.scs" od)
+    when( isFile(deck)
+      vfpLog(sprintf(nil "attended netlist %s/%s -> %s (corner %s)" lib cell deck corner))
+      return(deck) )
+    vfpError(sprintf(nil "vfpNetlistCellView: no deck produced at %s" deck))
+    return(nil)
+  )
+)
+
 ;; ---- run a sim job (M9 closed loop) ---------------------------------
 ;; Pre-flight (dirty-check + content fingerprint), then create + run a sim
 ;; job on the tunnel. The fingerprint is ours (content-based), so the
@@ -113,7 +170,7 @@ defun( vfpSimPreflightJson (cv @optional (test ""))
 ;; "done" (a fresh create returns "queued", which we then job.run). Refuses
 ;; a dirty cellview so we never sim a stale netlist. Returns (job_id reused)
 ;; or nil.
-defun( vfpRunSimJob (cv @optional (test "tran"))
+defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nominal"))
   prog( (pf jjson pfile res ok payload job jid jstatus rr)
     unless( cv
       vfpError("vfpRunSimJob: no cellview")
@@ -122,6 +179,12 @@ defun( vfpRunSimJob (cv @optional (test "tran"))
     when( vfpAlistGet(pf "dirty")
       vfpError(vfpAlistGet(pf "reason"))
       return(nil) )
+    ;; M10b attended: assemble a fresh complete deck in THIS live session
+    ;; (license reused) so the headless wrapper sims the current design. The
+    ;; deck lands at the convention path the wrapper derives from the cellview.
+    when( attended
+      unless( vfpNetlistCellView(cv ?corner corner)
+        return(nil) ) )
     jjson = vfpToJson( vfpJObj("job" vfpJObj(
               "cellview" vfpJObj("lib"  cv~>libName
                                  "cell" cv~>cellName
