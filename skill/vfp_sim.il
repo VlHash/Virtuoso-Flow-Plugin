@@ -114,7 +114,7 @@ defun( vfpSimPreflightJson (cv @optional (test ""))
 ;; a dirty cellview so we never sim a stale netlist. Returns (job_id reused)
 ;; or nil.
 defun( vfpRunSimJob (cv @optional (test "tran"))
-  prog( (pf jjson pfile res ok payload job jid jstatus rr)
+  prog( (pf sid jjson pfile res ok payload job jid jstatus rr)
     unless( cv
       vfpError("vfpRunSimJob: no cellview")
       return(nil) )
@@ -122,12 +122,18 @@ defun( vfpRunSimJob (cv @optional (test "tran"))
     when( vfpAlistGet(pf "dirty")
       vfpError(vfpAlistGet(pf "reason"))
       return(nil) )
-    jjson = vfpToJson( vfpJObj("job" vfpJObj(
-              "cellview" vfpJObj("lib"  cv~>libName
-                                 "cell" cv~>cellName
-                                 "view" cv~>viewName)
-              "test"               test
-              "inputs_fingerprint" vfpAlistGet(pf "fingerprint"))) )
+    ;; M10a: carry the M8 session_id at the params level so the tunnel can
+    ;; resolve provenance.session from its registry (ignored until collab
+    ;; reads params.session_id on job.create/run — harmless meanwhile).
+    sid = or(vfpStateGet('sessionId) "")
+    jjson = vfpToJson( vfpJObj(
+              "session_id" sid
+              "job" vfpJObj(
+                "cellview" vfpJObj("lib"  cv~>libName
+                                   "cell" cv~>cellName
+                                   "view" cv~>viewName)
+                "test"               test
+                "inputs_fingerprint" vfpAlistGet(pf "fingerprint"))) )
     pfile = sprintf(nil "%s/job_%d.json" vfpHelperOutDir() vfpRpcSeq())
     unless( vfpWriteFile(pfile jjson)
       vfpError("vfpRunSimJob: could not write job file")
@@ -146,7 +152,8 @@ defun( vfpRunSimJob (cv @optional (test "tran"))
     when( equal(jstatus "done")
       vfpLog(sprintf(nil "reused fresh job %s (identical inputs)" jid))
       return(list(jid t)) )
-    rr = vfpRpcExec("job.run" list("--param" sprintf(nil "job_id=%s" jid)))
+    rr = vfpRpcExec("job.run" list("--param" sprintf(nil "job_id=%s" jid)
+                                   "--param" sprintf(nil "session_id=%s" sid)))
     return(
       if( car(rr)
         then vfpLog(sprintf(nil "started sim job %s" jid)) list(jid nil)
