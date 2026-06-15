@@ -22,6 +22,10 @@
       "type": "string",
       "description": "Cellview last-saved time (ddGetObjLastModify); flows to result provenance.saved_at."
     },
+    "session": {
+      "type": "string",
+      "description": "Originating Virtuoso session_id (M8), bound at job.create; flows to result provenance.session."
+    },
     "result_id": { "type": "string", "description": "set when status=done" },
     "run_id": { "type": "string", "description": "linked artifact run, if any" },
     "error": { "type": "string", "description": "set when status=failed" },
