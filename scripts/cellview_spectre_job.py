@@ -18,11 +18,23 @@ The runner's parse path takes `metrics` today; collab F.2 merges
 `provenance`/`metric_quality` into the result (schema 0.2). Writing them now is
 forward-compatible (harmless until F.2 — they are simply ignored).
 
-Netlisting is configurable (owner decision, 2026-06-15) to avoid the headless-
-Virtuoso license path:
+Netlisting strategy (owner design, 2026-06-15): the wrapper SIMS a deck that
+was assembled upstream; it does not assemble one itself. A complete fresh deck
+(design + PDK models + analyses + options) only comes from an ADE/OCEAN
+netlister (plain `si` emits the design netlist only), so deck assembly is
+layered above the wrapper in two modes, both routing netlisting through a
+persistent Virtuoso session so its framework license is reused, not re-checked:
+  - attended (zhishou):   the VFP plugin triggers createNetlist inside the
+                          user's live Virtuoso session (reuses that session's
+                          license, no new checkout) and writes the deck.
+  - delegated (daiguan):  a persistent headless Virtuoso/OCEAN service netlists
+                          (one license checkout, reused across runs).
+Either way the assembled deck path is handed to the wrapper:
 
-  VFP_NETLIST_MODE=si      (default) standalone `si` netlister from the cellview
-  VFP_NETLIST_MODE=reuse             reuse a prebuilt deck (VFP_REUSE_NETLIST)
+  VFP_NETLIST_MODE=reuse  (default) sim the provided deck (VFP_REUSE_NETLIST)
+  VFP_NETLIST_MODE=si     experimental; wrapper-internal `si` emits only the
+                          design netlist (no models/analyses) -> not runnable on
+                          its own. Kept for experiments; prefer reuse.
 
 VERIFIED locally (tests/test_m10b_wrapper.py): env/job.json parsing, reuse-mode,
 the spectre invocation wiring (fake binary), PSF parse, provenance,
@@ -95,11 +107,13 @@ def read_job():
 # ---- netlisting (configurable; never from a shell-supplied command) --
 
 def netlist(job):
-    """Produce a spectre-runnable deck for job's cellview. Returns (deck, mode)."""
-    mode = os.environ.get("VFP_NETLIST_MODE", "si")
-    if mode == "reuse":
-        return netlist_via_reuse(job), "reuse"
-    return netlist_via_si(job), "si"
+    """Produce a spectre-runnable deck for job's cellview. Returns (deck, mode).
+    Default reuse: the deck is assembled upstream (attended createNetlist or a
+    delegated headless service) and handed in via VFP_REUSE_NETLIST."""
+    mode = os.environ.get("VFP_NETLIST_MODE", "reuse")
+    if mode == "si":
+        return netlist_via_si(job), "si"
+    return netlist_via_reuse(job), "reuse"
 
 
 def netlist_via_reuse(job):
@@ -117,13 +131,12 @@ def netlist_via_reuse(job):
 
 
 def netlist_via_si(job):
-    """Standalone `si` netlister: generate a Spectre deck from the cellview
-    headlessly, with no Virtuoso GUI/license session.
-
-    NEEDS SERVER VERIFICATION (Project/inv_tb): the exact `si` invocation, the
-    si.env (simNetlistOption / model files for the PDK), and corner selection.
-    The command below is a best guess — iterate on the server before relying on
-    si-mode.
+    """EXPERIMENTAL standalone `si` netlister. Findings on Project/inv_tb
+    (2026-06-15): `si` still checks out a Virtuoso Framework license, and it
+    emits only the DESIGN netlist — the PDK model includes, analyses and
+    simulatorOptions are ADE-layered, so the `si` deck is not runnable on its
+    own. The supported path is upstream deck assembly (attended createNetlist /
+    delegated headless service) feeding reuse-mode. Kept for experiments only.
     """
     run_dir = job["run_dir"]
     lib, cell, view = job["lib"], job["cell"], job["view"]

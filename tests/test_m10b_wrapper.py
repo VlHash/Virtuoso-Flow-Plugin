@@ -112,6 +112,17 @@ def test_read_job_env_first_then_jobjson(tmp_path, monkeypatch):
     assert job["view"] == "schematic"
 
 
+def test_netlist_defaults_to_reuse(tmp_path, monkeypatch):
+    deck = tmp_path / "d.scs"
+    deck.write_text("simulator lang=spectre\n", encoding="utf-8")
+    monkeypatch.delenv("VFP_NETLIST_MODE", raising=False)
+    monkeypatch.setenv("VFP_REUSE_NETLIST", str(deck))
+    job = {"run_dir": str(tmp_path), "lib": "L", "cell": "C", "view": "v"}
+    path, mode = cj.netlist(job)
+    assert mode == "reuse"           # deck assembled upstream, wrapper sims it
+    assert path == str(deck)
+
+
 # ---- reuse-mode end to end (fake spectre) ---------------------------
 
 def _run_wrapper(run_dir, env):
