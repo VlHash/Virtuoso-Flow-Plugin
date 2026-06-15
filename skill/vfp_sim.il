@@ -209,7 +209,8 @@ defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nom
     when( equal(jstatus "done")
       vfpLog(sprintf(nil "reused fresh job %s (identical inputs)" jid))
       return(list(jid t)) )
-    rr = vfpRpcExec("job.run" list("--param" sprintf(nil "job_id=%s" jid)))
+    rr = vfpRpcExec("job.run" list("--param" sprintf(nil "job_id=%s" jid)
+                                   "--param" sprintf(nil "session_id=%s" sid)))
     return(
       if( car(rr)
         then vfpLog(sprintf(nil "started sim job %s" jid)) list(jid nil)
