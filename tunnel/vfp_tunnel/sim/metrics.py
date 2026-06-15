@@ -1,3 +1,4 @@
+import math
 import time
 import uuid
 
@@ -6,11 +7,18 @@ def _coerce_number(v):
     if isinstance(v, bool):
         return None
     if isinstance(v, (int, float)):
-        return v
-    try:
-        return float(v)
-    except (TypeError, ValueError):
+        n = v
+    else:
+        try:
+            n = float(v)
+        except (TypeError, ValueError):
+            return None
+    # Drop non-finite values (NaN/Inf) at the boundary: they are not valid
+    # JSON numbers, and a metric like GM='nan' (unconditionally stable) must
+    # cross as metric_quality, never a bare NaN.
+    if isinstance(n, float) and not math.isfinite(n):
         return None
+    return n
 
 
 def extract_metrics(obj):

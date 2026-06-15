@@ -1,8 +1,37 @@
+import json
+import os
 import subprocess
 
 from ..config import runs_dir
 from .metrics import make_result
 from .parser import parse_metrics_file
+
+
+def _job_context(job, run_dir, metrics_file):
+    """Expose the job to the wrapper two ways: run_dir/job.json (structured)
+    and VFP_JOB_* env vars. The wrapper netlists job.cellview and writes the
+    metrics file; the command itself is server-configured, so this is data,
+    never a command."""
+    cv = job.get("cellview") or {}
+    info = {"job_id": job.get("job_id"), "test": job.get("test"),
+            "inputs_fingerprint": job.get("inputs_fingerprint"), "cellview": cv}
+    try:
+        (run_dir / "job.json").write_text(
+            json.dumps(info, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+    env = dict(os.environ)
+    env.update({
+        "VFP_JOB_ID": str(job.get("job_id") or ""),
+        "VFP_JOB_LIB": str(cv.get("lib") or ""),
+        "VFP_JOB_CELL": str(cv.get("cell") or ""),
+        "VFP_JOB_VIEW": str(cv.get("view") or ""),
+        "VFP_JOB_TEST": str(job.get("test") or ""),
+        "VFP_JOB_FINGERPRINT": str(job.get("inputs_fingerprint") or ""),
+        "VFP_RUN_DIR": str(run_dir),
+        "VFP_METRICS_FILE": metrics_file,
+    })
+    return env
 
 
 class JobRunner:
@@ -44,10 +73,11 @@ class JobRunner:
         run_dir = runs_dir() / rid
         self.jobs.mark_running(job_id)
         self.runs.set_status(rid, "running")
+        env = _job_context(job, run_dir, metrics_file)
 
         try:
             proc = subprocess.run(
-                command, cwd=str(run_dir),
+                command, cwd=str(run_dir), env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 timeout=timeout_s)
         except subprocess.TimeoutExpired:
