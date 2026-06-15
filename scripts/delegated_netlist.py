@@ -1,37 +1,44 @@
 #!/usr/bin/env python3
 """Delegated (代管) netlist worker.
 
-Drive a PERSISTENT headless Virtuoso over vcli to assemble a complete spectre
-deck for a cellview, reusing that Virtuoso's already-held framework license (no
-new checkout per run). The deck lands at the wrapper convention path
+Assemble a complete spectre deck for a cellview through a PERSISTENT netlister,
+for unattended jobs — reusing one already-held framework license (no new
+checkout per run). The deck lands at the wrapper convention path
 ``$VFP_NETLIST_DIR/<lib>__<cell>__<view>/netlist/input.scs``, so the M10b
 wrapper (cellview_spectre_job.py, reuse mode) sims it with no per-job plumbing.
 
-This is the unattended counterpart of the attended (值守) path: instead of
-running ``vfpNetlistCellView`` in the user's live session, it loads the same
-``vfp_netlist.il`` into a separate persistent Virtuoso and calls it over vcli.
-One vcli Virtuoso, one license, reused across runs.
+This is the unattended counterpart of the attended (值守) path (vfpNetlistCellView
+in the user's live session).
+
+Pluggable backend (NOT vcli-only)
+---------------------------------
+A backend is any callable ``(lib, cell, view, corner) -> deck_path | None``.
+Select it with ``VFP_DELEGATED_BACKEND`` (default ``vcli``):
+
+  vcli              drive a persistent headless Virtuoso over vcli (default),
+                    loading vfp_netlist.il and calling vfpNetlistCellView.
+  command           run a server-configured command (VFP_DELEGATED_NETLIST_CMD,
+                    JSON array or shlex string) with the cellview in the env —
+                    for any non-vcli netlister (headless OCEAN, a site script).
+  <module>:<func>   a custom Python backend (imported and called).
+
+Or pass a callable to ``netlist(..., backend=fn)`` from your own code.
 
 Usage:
     python delegated_netlist.py <lib> <cell> <view> [corner]
 
-Prerequisites:
-  - A running vcli Virtuoso on the target (start it with the vcli daemon;
-    see the vcli-bridge tooling). Key-based SSH.
-  - vfp_utils.il + vfp_netlist.il present on the target under
-    $VFP_REMOTE_SKILL_DIR.
-
-Config (env, with defaults for the shared lab server):
-  VFP_VCLI_TARGET        user@host           (meow@192.168.185.231)
-  VFP_VCLI_BIN           remote vcli path    (/home/meow/.cargo/bin/vcli)
-  VFP_VCLI_DAEMON        remote daemon path  (/home/meow/.cargo/bin/virtuoso-daemon)
-  VFP_VCLI_SPECTRE_CMD   remote spectre      (/opt/cadence/SPECTRE231/bin/spectre)
-  VFP_REMOTE_SKILL_DIR   dir with the .il    (/home/meow/Documents/VFP/skill)
+vcli backend config (env, shared-lab defaults):
+  VFP_VCLI_TARGET / VFP_VCLI_BIN / VFP_VCLI_DAEMON / VFP_VCLI_SPECTRE_CMD
+  VFP_REMOTE_SKILL_DIR   dir holding vfp_utils.il + vfp_netlist.il on the target
 """
+import importlib
 import json
 import os
+import shlex
 import subprocess
 import sys
+
+# ---- vcli backend (default) -----------------------------------------
 
 TARGET = os.environ.get("VFP_VCLI_TARGET", "meow@192.168.185.231")
 VCLI = os.environ.get("VFP_VCLI_BIN", "/home/meow/.cargo/bin/vcli")
@@ -67,10 +74,9 @@ def _vcli_exec(skill_expr, timeout=180):
     return True, (res.get("output") or "").strip()
 
 
-def netlist(lib, cell, view, corner="Nominal"):
-    """Assemble the deck via the persistent Virtuoso; return the deck path or
-    None. Loads the netlist module each call (idempotent; the functions persist
-    in the session) then calls vfpNetlistCellView."""
+def vcli_backend(lib, cell, view, corner="Nominal"):
+    """Default backend: load vfp_netlist.il into the persistent Virtuoso and
+    call vfpNetlistCellView over vcli (idempotent load; functions persist)."""
     skill = (
         'progn( '
         'load("%s/vfp_utils.il") '
@@ -81,19 +87,69 @@ def netlist(lib, cell, view, corner="Nominal"):
     )
     ok, val = _vcli_exec(skill)
     if not ok:
-        sys.stderr.write("delegated_netlist: %s\n" % (val,))
+        sys.stderr.write("delegated_netlist[vcli]: %s\n" % (val,))
         return None
-    deck = val.strip().strip('"')          # vcli returns the SKILL string quoted
-    return deck or None
+    return (val.strip().strip('"') or None)   # vcli returns the SKILL string quoted
+
+
+# ---- command backend (any non-vcli netlister, no code) --------------
+
+def command_backend(lib, cell, view, corner="Nominal"):
+    """Run a server-configured netlist command (VFP_DELEGATED_NETLIST_CMD, JSON
+    array or shlex string) with the cellview in the env (VFP_JOB_LIB/CELL/VIEW/
+    CORNER). The command assembles the deck (e.g. headless OCEAN, a site script)
+    and prints the deck path on its last stdout line."""
+    raw = os.environ.get("VFP_DELEGATED_NETLIST_CMD")
+    if not raw:
+        sys.stderr.write("delegated_netlist[command]: set VFP_DELEGATED_NETLIST_CMD\n")
+        return None
+    raw = raw.strip()
+    argv = json.loads(raw) if raw.startswith("[") else shlex.split(raw)
+    env = dict(os.environ, VFP_JOB_LIB=lib, VFP_JOB_CELL=cell,
+               VFP_JOB_VIEW=view, VFP_JOB_CORNER=corner)
+    try:
+        proc = subprocess.run(argv, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=600)
+    except OSError as e:
+        sys.stderr.write("delegated_netlist[command]: %s\n" % e)
+        return None
+    out = (proc.stdout or b"").decode("utf-8", "replace").strip()
+    if proc.returncode != 0:
+        sys.stderr.write(out[-800:] + "\n")
+        return None
+    return out.splitlines()[-1].strip() if out else None
+
+
+# ---- backend selection ----------------------------------------------
+
+_BUILTIN_BACKENDS = {"vcli": vcli_backend, "command": command_backend}
+
+
+def resolve_backend(name=None):
+    """Pick a netlist backend by name (default VFP_DELEGATED_BACKEND or 'vcli').
+    A built-in name, or 'module:callable' for a custom extension."""
+    name = name or os.environ.get("VFP_DELEGATED_BACKEND", "vcli")
+    if name in _BUILTIN_BACKENDS:
+        return _BUILTIN_BACKENDS[name]
+    if ":" in name:
+        mod, _, fn = name.partition(":")
+        return getattr(importlib.import_module(mod), fn)
+    raise ValueError("unknown delegated backend: %r" % name)
+
+
+def netlist(lib, cell, view, corner="Nominal", backend=None):
+    """Assemble the deck via the selected backend; return the deck path or None.
+    `backend` is a callable, a backend name, or None (env / default vcli)."""
+    fn = backend if callable(backend) else resolve_backend(backend)
+    return fn(lib, cell, view, corner)
 
 
 def main(argv):
     if not (3 <= len(argv) <= 4):
-        sys.stderr.write(__doc__.split("Usage:")[1].split("\n\n")[0])
+        sys.stderr.write("usage: delegated_netlist.py <lib> <cell> <view> [corner]\n")
         return 2
-    lib, cell, view = argv[0], argv[1], argv[2]
     corner = argv[3] if len(argv) == 4 else "Nominal"
-    deck = netlist(lib, cell, view, corner)
+    deck = netlist(argv[0], argv[1], argv[2], corner)
     if not deck:
         return 1
     print(deck)
