@@ -25,8 +25,7 @@ simulation results, and rolled back when needed.
 
 ## Current Status
 
-Milestones 1–9, 11, and 13a are implemented; Milestone 10 (cellview-specific
-simulation with in-session netlist) is in progress.
+Milestones 1–11 and 13a are implemented.
 
 | Milestone | Status |
 | --- | --- |
@@ -39,7 +38,7 @@ simulation with in-session netlist) is in progress.
 | ADE integration + run/artifact tracking | Done |
 | Session identity: fingerprint dedup, heartbeat, reap, doctor (M8) | Done |
 | Sim jobs: freshness guard, netlist dirty-check, real-spectre closed loop (M9) | Done |
-| Cellview-specific real-spectre + attended in-session netlist (M10) | In progress |
+| Cellview-specific real-spectre + attended netlist, result provenance (M10) | Done |
 | Connectivity snapshot/diff, txn audit, auto-net risk, TB lint, blame chain (M11) | Parts 1–5 |
 | Transport hardening: error taxonomy + UTF-8 audit (M13a) | Done |
 

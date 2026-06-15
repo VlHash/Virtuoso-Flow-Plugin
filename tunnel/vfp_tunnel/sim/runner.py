@@ -114,6 +114,11 @@ class JobRunner:
         for key in ("provenance", "metric_quality"):
             if parsed.get(key):
                 result_data[key] = parsed[key]
+        # F.3: stamp the originating session (bound at job.create) into provenance
+        if job.get("session"):
+            prov = dict(result_data.get("provenance") or {})
+            prov["session"] = job["session"]
+            result_data["provenance"] = prov
         result = make_result(result_data)
         self.results.update(result)
         self.runs.link_result(rid, result["result_id"])

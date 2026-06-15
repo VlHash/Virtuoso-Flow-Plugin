@@ -496,6 +496,13 @@ class Tunnel:
         data = params.get("job")
         if not isinstance(data, dict):
             raise JsonRpcError(INVALID_PARAMS, "params.job must be an object")
+        # F.3: bind the originating session (M10a sends it at params.session_id)
+        # onto the job for result provenance; touch the registry to resolve it.
+        sid = params.get("session_id")
+        if sid:
+            data = dict(data)
+            data["session"] = sid
+            self.registry.touch(sid)
         candidate = make_job(data)
         # Freshness guard: reuse a done job with the same inputs unless the
         # caller opts out with reuse=false.

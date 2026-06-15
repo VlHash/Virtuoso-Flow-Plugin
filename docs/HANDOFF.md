@@ -58,7 +58,7 @@ result → constraints) is done. The problem-driven **M8+** plan:
 |-----------|------|--------|
 | **M8** | Session identity: fingerprint dedup, long-poll heartbeat, reap, `vfp doctor` | done |
 | **M9** | Sim job model + freshness guard + runner (tunnel); netlist **dirty-check** + inputs **fingerprint** + real-spectre closed loop (plugin) | done |
-| **M10** | Cellview-specific real-spectre + provenance/metric_quality: `session_id` in jobs (M10a); cellview wrapper + **attended in-session netlist** via `maeCreateNetlistForCorner`, reusing the live session's license (M10b, plugin); result schema 0.2 merge (collab F.2) | M10a/b done (plugin), live on Project/inv_tb; collab F.2 pending |
+| **M10** | Cellview-specific real-spectre + provenance/metric_quality: `session_id` in jobs (M10a); cellview wrapper + **attended in-session netlist** via `maeCreateNetlistForCorner`, reusing the live session's license (M10b, plugin); M10c saved_at; result schema 0.2 = provenance + metric_quality + session (tunnel F.1–F.3) | done — live on Project/inv_tb |
 | **M11** | Connectivity snapshot/diff, txn connectivity audit, auto-net risk + `vfpPinNetLabel`, TB lint + pre-apply checkpoint, **parameter blame chain + batch apply + rollback picker** | done |
 | **M12** | Approval envelope + experiment ledger | planned (collab-led) |
 | **M13** | Transport hardening (errors / UTF-8), deck patch, `doctor --fix` | M13a done; b/c planned |

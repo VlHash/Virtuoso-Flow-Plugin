@@ -30,17 +30,17 @@ dependency.
 | 7 | ADE/Spectre integration | **done** |
 | 8 | Session identity: fingerprint dedup, heartbeat, reap, doctor | **done** |
 | 9 | Sim job model + freshness guard + runner; netlist dirty-check + inputs fingerprint; real-spectre closed loop | **done** |
-| 10 | Cellview-specific real-spectre wrapper + attended in-session netlist (provenance, metric_quality) | M10a/b done (plugin side); collab F.2 (result schema 0.2 merge) pending |
+| 10 | Cellview-specific real-spectre wrapper + attended in-session netlist; result schema 0.2 (provenance + metric_quality + session) | **done** |
 | 11 | Connectivity snapshot/diff, txn connectivity audit, auto-net risk + pin, TB lint + pre-apply checkpoint, parameter blame chain + batch apply + rollback picker | parts 1–5 **done** |
 | 13a | Transport hardening: error taxonomy + UTF-8 audit | **done** |
 
 Milestones verified live in Virtuoso IC23.1: M8 reconnect/heartbeat/reap
 (2026-06-13); M11 P3–P5 + the M9 real-spectre closed loop on VNC
 (2026-06-14/15); M10b cellview-specific real-spectre + attended in-session
-netlist on Project/inv_tb (2026-06-15). M10 is in progress: M10a (session_id
-in sim jobs) and M10b (cellview-specific wrapper + attended netlist) are done
-on the plugin side; the collab-led tunnel half (result schema 0.2 = provenance
-+ metric_quality merge into the result) is pending. M12 (approval envelope +
+netlist on Project/inv_tb (2026-06-15). M10 is complete: M10a (session_id),
+M10b (cellview wrapper + attended netlist), M10c (saved_at) on the plugin side,
+and the tunnel half F.1–F.3 (runner cellview pass-through, result schema 0.2
+with provenance + metric_quality, session resolution). M12 (approval envelope +
 experiment ledger) is collab-led and not yet started. The **layout side**
 (below) is planned but not started.
 
