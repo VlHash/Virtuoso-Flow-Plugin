@@ -5,6 +5,7 @@ be overridden with the ``VFP_HOME`` environment variable; host/port can be
 overridden with ``VFP_HOST`` / ``VFP_PORT``.
 """
 
+import json
 import os
 import shlex
 from pathlib import Path
@@ -95,22 +96,38 @@ def session_ttl_s():
         return DEFAULT_SESSION_TTL_S
 
 
-def sim_cmd():
-    """Argv for the simulator the job runner executes, from VFP_SIM_CMD.
-
-    Server-configured ONLY (never taken from an RPC client), so an agent
-    cannot inject an arbitrary command. Returns a list (shlex-split) or None
-    if unset. The command runs in the job's run dir and must write the metrics
-    file (see sim_metrics_file()).
-    """
-    raw = os.environ.get("VFP_SIM_CMD")
-    if not raw:
-        return None
+def _split_command(raw):
+    """Parse a server-configured command string into argv. A JSON array is taken
+    verbatim (exact argv, no quoting ambiguity — the safe form for Windows paths
+    with backslashes, which POSIX shlex would eat); otherwise shlex. Returns a
+    non-empty list or None."""
+    raw = raw.strip()
+    if raw.startswith("["):
+        try:
+            v = json.loads(raw)
+        except ValueError:
+            return None
+        return [str(x) for x in v] if isinstance(v, list) and v else None
     try:
         argv = shlex.split(raw)
     except ValueError:
         return None
     return argv or None
+
+
+def sim_cmd():
+    """Argv for the simulator the job runner executes, from VFP_SIM_CMD.
+
+    Server-configured ONLY (never taken from an RPC client), so an agent cannot
+    inject an arbitrary command. VFP_SIM_CMD is either a JSON array (exact argv;
+    use this for Windows paths with backslashes) or a shlex string. Returns a
+    list or None if unset. The command runs in the job's run dir and must write
+    the metrics file (see sim_metrics_file()).
+    """
+    raw = os.environ.get("VFP_SIM_CMD")
+    if not raw:
+        return None
+    return _split_command(raw)
 
 
 def sim_metrics_file():
