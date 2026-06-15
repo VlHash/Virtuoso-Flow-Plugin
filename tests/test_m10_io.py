@@ -45,6 +45,21 @@ def test_runner_passes_cellview_via_env_and_jobjson(tmp_path, monkeypatch):
     assert json.loads(jf.read_text())["cellview"]["cell"] == "XOPA"
 
 
+def test_runner_forwards_saved_at(tmp_path, monkeypatch):
+    # M10c: the cellview's last-saved time rides the job to the wrapper as
+    # VFP_JOB_SAVED_AT (and into job.json) -> result provenance.saved_at.
+    cfg, jobs, results, runs, runner = _stores(tmp_path, monkeypatch)
+    jid = jobs.create({"test": "ac", "saved_at": "Oct 13 08:30:26 2025"})["job_id"]
+    code = (
+        "import os, json;"
+        "assert os.environ['VFP_JOB_SAVED_AT'] == 'Oct 13 08:30:26 2025';"
+        "assert json.load(open('job.json'))['saved_at'] == 'Oct 13 08:30:26 2025';"
+        "open(os.environ['VFP_METRICS_FILE'], 'w').write(json.dumps({'metrics': {'ok': 1}}))"
+    )
+    done = runner.run(jid, [sys.executable, "-c", code])
+    assert done["status"] == "done", done.get("error")
+
+
 def test_runner_metrics_file_env_name_honored(tmp_path, monkeypatch):
     monkeypatch.setenv("VFP_SIM_METRICS_FILE", "out.json")
     cfg, jobs, results, runs, runner = _stores(tmp_path, monkeypatch)

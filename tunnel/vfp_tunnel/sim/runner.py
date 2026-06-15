@@ -14,7 +14,8 @@ def _job_context(job, run_dir, metrics_file):
     never a command."""
     cv = job.get("cellview") or {}
     info = {"job_id": job.get("job_id"), "test": job.get("test"),
-            "inputs_fingerprint": job.get("inputs_fingerprint"), "cellview": cv}
+            "inputs_fingerprint": job.get("inputs_fingerprint"), "cellview": cv,
+            "saved_at": job.get("saved_at")}
     try:
         (run_dir / "job.json").write_text(
             json.dumps(info, indent=2), encoding="utf-8")
@@ -28,6 +29,7 @@ def _job_context(job, run_dir, metrics_file):
         "VFP_JOB_VIEW": str(cv.get("view") or ""),
         "VFP_JOB_TEST": str(job.get("test") or ""),
         "VFP_JOB_FINGERPRINT": str(job.get("inputs_fingerprint") or ""),
+        "VFP_JOB_SAVED_AT": str(job.get("saved_at") or ""),
         "VFP_RUN_DIR": str(run_dir),
         "VFP_METRICS_FILE": metrics_file,
     })

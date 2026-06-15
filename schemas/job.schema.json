@@ -18,6 +18,10 @@
       "type": "string",
       "description": "Opaque digest of the design inputs (from the plugin's dirty-check). Identical fingerprints => the same sim result; the freshness guard reuses a prior done job."
     },
+    "saved_at": {
+      "type": "string",
+      "description": "Cellview last-saved time (ddGetObjLastModify); flows to result provenance.saved_at."
+    },
     "result_id": { "type": "string", "description": "set when status=done" },
     "run_id": { "type": "string", "description": "linked artifact run, if any" },
     "error": { "type": "string", "description": "set when status=failed" },
