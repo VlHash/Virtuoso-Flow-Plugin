@@ -105,71 +105,9 @@ defun( vfpSimPreflightJson (cv @optional (test ""))
   )
 )
 
-;; ---- M10b attended netlist: assemble a complete deck in this session ----
-;; The VFP loop must sim the CURRENT design, never a stale netlist. A complete
-;; spectre deck (design + PDK models + analyses + options) only comes from the
-;; ADE/maestro netlister, so we trigger maeCreateNetlistForCorner INSIDE this
-;; live Virtuoso session — reusing the session's framework license (no separate
-;; `si`/Virtuoso checkout). The headless wrapper then sims the deck.
-
-;; Base dir for attended netlists; the wrapper derives the same per-cellview
-;; path, so override BOTH with the shared VFP_NETLIST_DIR env.
-defun( vfpNetlistDir ()
-  or( getShellEnvVar("VFP_NETLIST_DIR") "/tmp/vfp_nl" )
-)
-
-;; Per-cellview deck dir, matching the wrapper convention
-;; <base>/<lib>__<cell>__<view> (maeCreateNetlistForCorner writes
-;; <dir>/netlist/input.scs under it).
-defun( vfpNetlistCvDir (cv)
-  sprintf(nil "%s/%s__%s__%s" vfpNetlistDir() cv~>libName cv~>cellName cv~>viewName)
-)
-
-;; Assemble a complete deck for cv via its maestro session; return the deck
-;; path (<dir>/netlist/input.scs) or nil. Best-effort: needs the mae* API and a
-;; maestro setup on cv's cell. Opens a background session and always closes it
-;; (force) so no edit lock leaks.
-defun( vfpNetlistCellView (cv @key (corner "Nominal"))
-  prog( (lib cell od session test deck)
-    unless( cv vfpError("vfpNetlistCellView: no cellview") return(nil) )
-    unless( fboundp('maeCreateNetlistForCorner)
-      vfpError("vfpNetlistCellView: mae* netlister unavailable")
-      return(nil) )
-    lib  = cv~>libName
-    cell = cv~>cellName
-    unless( and(lib cell cv~>viewName)
-      vfpError("vfpNetlistCellView: incomplete cellview")
-      return(nil) )
-    od = vfpNetlistCvDir(cv)
-    errset( system(sprintf(nil "rm -rf '%s'" od)) )
-    session = car(errset( maeOpenSetup(lib cell "maestro") ))
-    unless( and(session stringp(session))
-      vfpError(sprintf(nil "vfpNetlistCellView: maeOpenSetup failed for %s/%s" lib cell))
-      return(nil) )
-    test = car(errset( car(maeGetSetup(?session session)) ))
-    when( test
-      errset( maeCreateNetlistForCorner(test corner od ?session session) ) )
-    errset( maeCloseSession(?session session ?forceClose t) )
-    unless( test
-      vfpError("vfpNetlistCellView: no test in maestro setup")
-      return(nil) )
-    deck = sprintf(nil "%s/netlist/input.scs" od)
-    when( isFile(deck)
-      vfpLog(sprintf(nil "attended netlist %s/%s -> %s (corner %s)" lib cell deck corner))
-      return(deck) )
-    vfpError(sprintf(nil "vfpNetlistCellView: no deck produced at %s" deck))
-    return(nil)
-  )
-)
-
-;; M10c: the cellview's last-saved time -> provenance.saved_at. ddGetObjLastModify
-;; on the view returns a human-readable string like "Oct 13 08:30:26 2025"; nil
-;; if the view can't be resolved.
-defun( vfpCvSavedAt (cv)
-  and( cv
-       car(errset(
-         ddGetObjLastModify( ddGetObj(cv~>libName cv~>cellName cv~>viewName) ) )) )
-)
+;; The netlist assembler (vfpNetlistCellView / vfpCvSavedAt + helpers) moved to
+;; vfp_netlist.il so the delegated worker (代管) can load it over vcli without
+;; the sim-job/tunnel-RPC code below. vfpRunSimJob still calls those functions.
 
 ;; ---- run a sim job (M9 closed loop) ---------------------------------
 ;; Pre-flight (dirty-check + content fingerprint), then create + run a sim
@@ -226,10 +164,12 @@ defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nom
       return(list(jid t)) )
     rr = vfpRpcExec("job.run" list("--param" sprintf(nil "job_id=%s" jid)
                                    "--param" sprintf(nil "session_id=%s" sid)))
+    ;; 3-arg if, not the then/else keyword form (fragile in argument position
+    ;; per the AGENTS gotcha).
     return(
       if( car(rr)
-        then vfpLog(sprintf(nil "started sim job %s" jid)) list(jid nil)
-        else vfpError(sprintf(nil "job.run failed: %s" vfpFmtError(cadr(rr)))) nil
+        progn( vfpLog(sprintf(nil "started sim job %s" jid)) list(jid nil) )
+        progn( vfpError(sprintf(nil "job.run failed: %s" vfpFmtError(cadr(rr)))) nil )
       )
     )
   )
