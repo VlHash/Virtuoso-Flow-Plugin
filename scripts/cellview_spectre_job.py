@@ -1,0 +1,287 @@
+#!/usr/bin/env python3
+"""M10b: cellview-specific real-Spectre VFP_SIM_CMD wrapper.
+
+Unlike scripts/real_spectre_job.py (which sims a FIXED resistive divider to
+prove the M9 closed loop drives a *real* Spectre binary), this wrapper
+simulates the JOB'S ACTUAL cellview. It consumes the runner job-context
+pass-through (collab M10 F.1, PR #39):
+
+  env    VFP_JOB_LIB / VFP_JOB_CELL / VFP_JOB_VIEW / VFP_JOB_TEST,
+         VFP_JOB_ID, VFP_JOB_FINGERPRINT, VFP_RUN_DIR, VFP_METRICS_FILE
+  file   $VFP_RUN_DIR/job.json  {job_id, test, inputs_fingerprint, cellview}
+
+It writes $VFP_METRICS_FILE (in the run dir) as
+
+  {"metrics": {...}, "provenance": {...}, "metric_quality": {...}}
+
+The runner's parse path takes `metrics` today; collab F.2 merges
+`provenance`/`metric_quality` into the result (schema 0.2). Writing them now is
+forward-compatible (harmless until F.2 — they are simply ignored).
+
+Netlisting is configurable (owner decision, 2026-06-15) to avoid the headless-
+Virtuoso license path:
+
+  VFP_NETLIST_MODE=si      (default) standalone `si` netlister from the cellview
+  VFP_NETLIST_MODE=reuse             reuse a prebuilt deck (VFP_REUSE_NETLIST)
+
+VERIFIED locally (tests/test_m10b_wrapper.py): env/job.json parsing, reuse-mode,
+the spectre invocation wiring (fake binary), PSF parse, provenance,
+metric_quality split, NaN-safe output.
+
+NEEDS SERVER VERIFICATION (meow@…, against Project/inv_tb, known-good): the `si`
+invocation (si.env + PDK model include + corner) and real-design measurement
+extraction. The `si` command below is a best guess — run it on the server and
+correct it before relying on si-mode.
+"""
+import hashlib
+import json
+import math
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+# Real Spectre is invoked by full path (its rpath supplies the Cadence libs, so
+# no LD_LIBRARY_PATH is needed) with CDS_LIC_FILE pointing at the license. Both
+# overridable for portability; VFP_SPECTRE_CMD (full command, shell-split or a
+# JSON list) takes precedence and is how the tests inject a fake binary.
+SPECTRE = os.environ.get("VFP_SPECTRE_BIN",
+                         "/opt/cadence/SPECTRE231/tools/bin/spectre")
+CDS_LIC = os.environ.get("VFP_CDS_LIC_FILE",
+                         "/opt/cadence/IC231/share/license/license.dat")
+
+# Our gain-rail sentinel: a metric like A0_dB=999 means "saturated / clipped to
+# the rail", not a literal 999 dB. It crosses as a number but is flagged in
+# metric_quality so a consumer never mistakes it for a real measurement.
+SENTINEL_DB = 999.0
+
+
+# ---- job context (F.1 pass-through) ---------------------------------
+
+def read_job():
+    """Job context, env first (the guaranteed channel) with run_dir/job.json as
+    a fallback (F.1 writes job.json best-effort, so env is authoritative)."""
+    run_dir = os.environ.get("VFP_RUN_DIR") or os.getcwd()
+    job = {
+        "job_id":      os.environ.get("VFP_JOB_ID") or "",
+        "test":        os.environ.get("VFP_JOB_TEST") or "",
+        "fingerprint": os.environ.get("VFP_JOB_FINGERPRINT") or "",
+        "lib":         os.environ.get("VFP_JOB_LIB") or "",
+        "cell":        os.environ.get("VFP_JOB_CELL") or "",
+        "view":        os.environ.get("VFP_JOB_VIEW") or "",
+        "run_dir":     run_dir,
+        "metrics_file": os.environ.get("VFP_METRICS_FILE") or "metrics.json",
+    }
+    if not (job["lib"] and job["cell"] and job["view"]):
+        jf = os.path.join(run_dir, "job.json")
+        if os.path.exists(jf):
+            try:
+                with open(jf, encoding="utf-8") as f:
+                    data = json.load(f)
+                cv = data.get("cellview") or {}
+                job["lib"]  = job["lib"]  or cv.get("lib") or ""
+                job["cell"] = job["cell"] or cv.get("cell") or ""
+                job["view"] = job["view"] or cv.get("view") or ""
+                job["test"] = job["test"] or data.get("test") or ""
+                job["fingerprint"] = job["fingerprint"] or data.get("inputs_fingerprint") or ""
+                job["job_id"] = job["job_id"] or data.get("job_id") or ""
+            except (OSError, ValueError):
+                pass
+    return job
+
+
+# ---- netlisting (configurable; never from a shell-supplied command) --
+
+def netlist(job):
+    """Produce a spectre-runnable deck for job's cellview. Returns (deck, mode)."""
+    mode = os.environ.get("VFP_NETLIST_MODE", "si")
+    if mode == "reuse":
+        return netlist_via_reuse(job), "reuse"
+    return netlist_via_si(job), "si"
+
+
+def netlist_via_reuse(job):
+    """Reuse a prebuilt deck (e.g. one ADE/Maestro already generated for this
+    cellview — inv_tb has one). VFP_REUSE_NETLIST points at the .scs; otherwise
+    look for <run_dir>/input.scs. The deck must already resolve PDK
+    models/corners (it does if ADE built it)."""
+    p = os.environ.get("VFP_REUSE_NETLIST")
+    if p and os.path.exists(p):
+        return p
+    cand = os.path.join(job["run_dir"], "input.scs")
+    if os.path.exists(cand):
+        return cand
+    raise RuntimeError("reuse netlist not found (set VFP_REUSE_NETLIST)")
+
+
+def netlist_via_si(job):
+    """Standalone `si` netlister: generate a Spectre deck from the cellview
+    headlessly, with no Virtuoso GUI/license session.
+
+    NEEDS SERVER VERIFICATION (Project/inv_tb): the exact `si` invocation, the
+    si.env (simNetlistOption / model files for the PDK), and corner selection.
+    The command below is a best guess — iterate on the server before relying on
+    si-mode.
+    """
+    run_dir = job["run_dir"]
+    lib, cell, view = job["lib"], job["cell"], job["view"]
+    if not (lib and cell and view):
+        raise RuntimeError("no cellview to netlist (lib/cell/view missing)")
+    si_bin = os.environ.get("VFP_SI_BIN", "si")
+    cmd = [si_bin, run_dir, "-batch", "-command", "netlist",
+           "-cellview", lib, cell, view]
+    proc = subprocess.run(cmd, cwd=run_dir, env=dict(os.environ),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        raise RuntimeError("si netlist failed:\n" +
+                           (proc.stdout or b"").decode("utf-8", "replace")[-800:])
+    for cand in (os.path.join(run_dir, "input.scs"),
+                 os.path.join(run_dir, "netlist", "input.scs")):
+        if os.path.exists(cand):
+            return cand
+    raise RuntimeError("si produced no input.scs under %s" % run_dir)
+
+
+# ---- spectre + measurement ------------------------------------------
+
+def _spectre_base():
+    cmd = os.environ.get("VFP_SPECTRE_CMD")
+    if cmd:
+        cmd = cmd.strip()
+        return json.loads(cmd) if cmd.startswith("[") else shlex.split(cmd)
+    return [SPECTRE]
+
+
+def run_spectre(deck_path, run_dir):
+    """Run Spectre on the deck; returns the psf dir. rpath supplies the libs
+    (no LD_LIBRARY_PATH); CDS_LIC_FILE points at the license."""
+    psf_dir = os.path.join(run_dir, "psf")
+    env = dict(os.environ, CDS_LIC_FILE=CDS_LIC)
+    cmd = _spectre_base() + [deck_path,
+                             "+log", os.path.join(run_dir, "spectre.out"),
+                             "-format", "psfascii", "-raw", psf_dir]
+    proc = subprocess.run(cmd, cwd=run_dir, env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        sys.stderr.write((proc.stdout or b"").decode("utf-8", "replace")[-800:])
+        raise RuntimeError("spectre exited %d" % proc.returncode)
+    return psf_dir
+
+
+def measure(psf_dir, test):
+    """Raw measurements (may include non-finite values, which become
+    metric_quality, never a bare NaN). Generic bring-up: every dcOp node
+    voltage as V_<node>. Real op-amp measures (A0_dB/PM/UGB) are configured
+    per design — NEEDS SERVER VERIFICATION for inv_tb."""
+    raw = {}
+    dc = os.path.join(psf_dir, "dcOp.dc")
+    if os.path.exists(dc):
+        with open(dc, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = re.match(r'\s*"([^"]+)"\s+"V"\s+(\S+)', line)
+                if not m:
+                    continue
+                try:
+                    raw["V_%s" % m.group(1)] = float(m.group(2))
+                except ValueError:
+                    raw["V_%s" % m.group(1)] = float("nan")
+    return raw
+
+
+# ---- metric_quality: non-finite / sentinel -> qualitative tag --------
+# Producer-side semantics (owner-owned per M10c); schema 0.2 (collab F.2) will
+# formalise the field. Keep these isolated so they are easy to adjust then.
+
+def _is_margin(name):
+    return name.upper().startswith(("GM", "PM"))
+
+
+def _is_gain(name):
+    return "dB" in name or name.upper().startswith(("A0", "GAIN"))
+
+
+def classify(name, value):
+    """Qualitative tag for a measurement that should not cross as a bare number,
+    or None if it is a normal finite metric."""
+    if value is None:
+        return "missing"
+    if isinstance(value, float) and not math.isfinite(value):
+        # a gain/phase margin that never crosses 0 dB is unconditionally stable,
+        # not 'missing data'
+        return "unconditional" if _is_margin(name) else "undefined"
+    if _is_gain(name) and isinstance(value, (int, float)) \
+            and not isinstance(value, bool) and abs(value) >= SENTINEL_DB:
+        return "saturated"
+    return None
+
+
+def split_metrics(raw):
+    """Partition raw measurements into finite numeric metrics + a
+    metric_quality map. Non-finite values never cross as bare numbers (matches
+    the runner's NaN guard); sentinels stay numeric but are also flagged."""
+    metrics, quality = {}, {}
+    for name, value in raw.items():
+        tag = classify(name, value)
+        if tag is not None:
+            quality[name] = tag
+        if isinstance(value, (int, float)) and not isinstance(value, bool) \
+                and math.isfinite(value):
+            metrics[name] = float(value)
+    return metrics, quality
+
+
+# ---- provenance ------------------------------------------------------
+
+def provenance(job, deck_path, mode):
+    """What this result actually came from. netlist_hash digests the exact deck
+    fed to spectre; cellview closes the content-only-fingerprint gap (identical
+    content in two cells reuses one job — record which one it ran on)."""
+    netlist_hash = ""
+    try:
+        with open(deck_path, "rb") as f:
+            netlist_hash = hashlib.sha256(f.read()).hexdigest()
+    except OSError:
+        pass
+    return {
+        "netlist_hash": netlist_hash,
+        "source_mode": mode,                       # "si" | "reuse"
+        "cellview": {"lib": job["lib"], "cell": job["cell"], "view": job["view"]},
+        # authoritative saved_at comes from SKILL (M10c, ddGetObjLastModify),
+        # carried via env when that plumbing lands; null until then.
+        "saved_at": os.environ.get("VFP_JOB_SAVED_AT") or None,
+        "fingerprint": job["fingerprint"],
+    }
+
+
+def main():
+    job = read_job()
+    run_dir = job["run_dir"]
+    try:
+        deck_path, mode = netlist(job)
+        run_spectre(deck_path, run_dir)
+        raw = measure(os.path.join(run_dir, "psf"), job["test"])
+    except RuntimeError as e:
+        sys.stderr.write("cellview_spectre_job: %s\n" % e)
+        return 1
+    if not raw:
+        sys.stderr.write("cellview_spectre_job: no measurements parsed\n")
+        return 1
+
+    metrics, quality = split_metrics(raw)
+    out = {
+        "metrics": metrics,
+        "provenance": provenance(job, deck_path, mode),
+        "metric_quality": quality,
+    }
+    mpath = os.path.join(run_dir, job["metrics_file"])
+    with open(mpath, "w", encoding="utf-8") as f:
+        # allow_nan=False enforces "NaN never on the wire" at the producer.
+        json.dump(out, f, indent=2, allow_nan=False)
+    print("cellview_spectre_job: %s/%s/%s -> %d metric(s), mode=%s" %
+          (job["lib"], job["cell"], job["view"], len(metrics), mode))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
