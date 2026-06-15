@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import threading
@@ -6,7 +7,7 @@ import time
 import pytest
 
 _FAKE = os.path.join(os.path.dirname(__file__), "fixtures", "fake_spectre.py")
-_OK_CMD = "%s %s" % (sys.executable, _FAKE)
+_OK_CMD = json.dumps([sys.executable, _FAKE])
 
 
 def _reload_sim(tmp_path, monkeypatch, **env):
@@ -71,6 +72,19 @@ def test_sim_cmd_from_env_only(tmp_path, monkeypatch):
     import importlib
     importlib.reload(cfg)
     assert cfg.sim_cmd() is None
+
+
+def test_sim_cmd_json_array_preserves_backslashes(tmp_path, monkeypatch):
+    # JSON array = exact argv; a Windows path with backslashes survives (POSIX
+    # shlex would eat them -> the old "C:\\py\\python.exe" -> "C:pypython.exe").
+    cfg = _reload_sim(tmp_path, monkeypatch,
+                      VFP_SIM_CMD=json.dumps([r"C:\Py\python.exe", "x.py"]))
+    assert cfg.sim_cmd() == [r"C:\Py\python.exe", "x.py"]
+
+
+def test_sim_cmd_shlex_string_still_works(tmp_path, monkeypatch):
+    cfg = _reload_sim(tmp_path, monkeypatch, VFP_SIM_CMD="mysim --flag val")
+    assert cfg.sim_cmd() == ["mysim", "--flag", "val"]
 
 
 # ---- RPC: job.run end-to-end ----------------------------------------
