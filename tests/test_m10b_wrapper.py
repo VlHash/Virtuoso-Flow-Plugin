@@ -47,6 +47,44 @@ def test_split_metrics_drops_non_finite_keeps_finite():
     assert quality == {"GM_dB": "unconditional", "UGB": "undefined"}
 
 
+_TRAN_PSF = '''HEADER
+"PSFversion" "1.00"
+SWEEP
+"time" "s" PROP(
+"key" "sweep"
+)
+TRACE
+"A" "V"
+"VDD" "V"
+"Y" "V"
+"I0:p" "I"
+VALUE
+"time" 0.0
+"A" 0.0
+"VDD" 3.3
+"Y" 3.3
+"I0:p" 1.0e-09
+"time" 6.0e-06
+"A" 0.0
+"VDD" 3.3
+"Y" 3.299999458127076
+"I0:p" -1.164e-07
+END
+'''
+
+
+def test_parse_tran_final_values_and_units(tmp_path):
+    psf = tmp_path / "psf"
+    psf.mkdir()
+    (psf / "tran.tran.tran").write_text(_TRAN_PSF, encoding="utf-8")
+    raw = cj.measure(str(psf), "tran")
+    assert raw["V_Y"] == 3.299999458127076   # inverter output settled high
+    assert raw["V_VDD"] == 3.3
+    assert raw["V_A"] == 0.0
+    assert raw["I_I0_p"] == -1.164e-07        # current trace gets the I_ prefix
+    assert "time" not in raw                  # the sweep var is not a metric
+
+
 def test_provenance_hashes_deck_and_records_cellview(tmp_path):
     deck = tmp_path / "input.scs"
     deck.write_text("simulator lang=spectre\n", encoding="utf-8")

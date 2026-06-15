@@ -33,6 +33,7 @@ invocation (si.env + PDK model include + corner) and real-design measurement
 extraction. The `si` command below is a best guess — run it on the server and
 correct it before relying on si-mode.
 """
+import glob
 import hashlib
 import json
 import math
@@ -169,11 +170,50 @@ def run_spectre(deck_path, run_dir):
     return psf_dir
 
 
+def _san(name):
+    return re.sub(r"[^0-9A-Za-z]+", "_", name).strip("_")
+
+
+def _parse_psf_ascii_final(path):
+    """Final-sweep-point values from a sectioned PSF-ASCII analysis file
+    (tran/ac/dc sweep). TRACE gives the unit per signal; VALUE is laid out
+    point-by-point, so the last value seen for each signal is its final-time
+    value. Returns {prefixed_name: float} (V_/I_ from the unit)."""
+    units, last = {}, {}
+    section = None
+    with open(path, encoding="utf-8", errors="replace") as f:
+        for raw in f:
+            line = raw.strip()
+            if line in ("HEADER", "TYPE", "SWEEP", "TRACE", "VALUE", "END"):
+                section = line
+                continue
+            if section == "TRACE":
+                m = re.match(r'"([^"]+)"\s+"([^"]+)"', line)
+                if m:
+                    units[m.group(1)] = m.group(2)
+            elif section == "VALUE":
+                m = re.match(r'"([^"]+)"\s+(\S+)\s*$', line)
+                if m and m.group(1) in units:
+                    try:
+                        last[m.group(1)] = float(m.group(2))
+                    except ValueError:
+                        last[m.group(1)] = float("nan")
+    out = {}
+    for name, val in last.items():
+        unit = units.get(name, "")
+        prefix = "V_" if unit == "V" else "I_" if unit == "I" else ""
+        out[prefix + _san(name)] = val
+    return out
+
+
 def measure(psf_dir, test):
-    """Raw measurements (may include non-finite values, which become
-    metric_quality, never a bare NaN). Generic bring-up: every dcOp node
-    voltage as V_<node>. Real op-amp measures (A0_dB/PM/UGB) are configured
-    per design — NEEDS SERVER VERIFICATION for inv_tb."""
+    """Scalar metrics from the PSF output (may include non-finite values, which
+    become metric_quality, never a bare NaN).
+
+    Handles two PSF-ASCII shapes: a flat dcOp.dc ("node" "V" value) and a
+    sectioned analysis file (tran/ac/dc sweep) whose final sweep point we take.
+    Real op-amp measures (A0_dB/PM/UGB) are design-specific post-processing that
+    come later (M10c+); these final-time node values prove the path on inv_tb."""
     raw = {}
     dc = os.path.join(psf_dir, "dcOp.dc")
     if os.path.exists(dc):
@@ -183,9 +223,15 @@ def measure(psf_dir, test):
                 if not m:
                     continue
                 try:
-                    raw["V_%s" % m.group(1)] = float(m.group(2))
+                    raw["V_" + _san(m.group(1))] = float(m.group(2))
                 except ValueError:
-                    raw["V_%s" % m.group(1)] = float("nan")
+                    raw["V_" + _san(m.group(1))] = float("nan")
+    for fn in sorted(glob.glob(os.path.join(psf_dir, "*.tran*")) +
+                     glob.glob(os.path.join(psf_dir, "*.ac")) +
+                     glob.glob(os.path.join(psf_dir, "*.dc"))):
+        if fn.endswith("dcOp.dc"):
+            continue
+        raw.update(_parse_psf_ascii_final(fn))
     return raw
 
 
