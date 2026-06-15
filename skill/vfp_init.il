@@ -32,6 +32,7 @@ VFP_MODULES = '(
   "vfp_context.il"
   "vfp_schematic.il"
   "vfp_connectivity.il"
+  "vfp_netlist.il"
   "vfp_sim.il"
   "vfp_ade.il"
   "vfp_proposal.il"
