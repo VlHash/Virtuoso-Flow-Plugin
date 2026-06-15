@@ -145,11 +145,22 @@ def netlist(lib, cell, view, corner="Nominal", backend=None):
 
 
 def main(argv):
-    if not (3 <= len(argv) <= 4):
-        sys.stderr.write("usage: delegated_netlist.py <lib> <cell> <view> [corner]\n")
-        return 2
-    corner = argv[3] if len(argv) == 4 else "Nominal"
-    deck = netlist(argv[0], argv[1], argv[2], corner)
+    if len(argv) >= 3:
+        lib, cell, view = argv[0], argv[1], argv[2]
+        corner = argv[3] if len(argv) >= 4 else "Nominal"
+    else:
+        # runner invocation: the cellview rides VFP_JOB_* env (set by the
+        # tunnel's _job_context), so VFP_NETLIST_CMD=delegated_netlist.py works
+        # with no args.
+        lib = os.environ.get("VFP_JOB_LIB")
+        cell = os.environ.get("VFP_JOB_CELL")
+        view = os.environ.get("VFP_JOB_VIEW")
+        corner = os.environ.get("VFP_JOB_CORNER") or "Nominal"
+        if not (lib and cell and view):
+            sys.stderr.write("usage: delegated_netlist.py <lib> <cell> <view> "
+                             "[corner]  (or set VFP_JOB_LIB/CELL/VIEW)\n")
+            return 2
+    deck = netlist(lib, cell, view, corner)
     if not deck:
         return 1
     print(deck)

@@ -130,6 +130,18 @@ def sim_cmd():
     return _split_command(raw)
 
 
+def netlist_cmd():
+    """Argv for an optional netlist step the job runner runs BEFORE the sim
+    command (VFP_NETLIST_CMD), to assemble a fresh deck for unattended
+    (delegated) jobs. Same parsing as sim_cmd; server-configured only. None if
+    unset -- attended jobs netlist in-session via the plugin instead.
+    """
+    raw = os.environ.get("VFP_NETLIST_CMD")
+    if not raw:
+        return None
+    return _split_command(raw)
+
+
 def sim_metrics_file():
     return os.environ.get("VFP_SIM_METRICS_FILE") or DEFAULT_SIM_METRICS_FILE
 

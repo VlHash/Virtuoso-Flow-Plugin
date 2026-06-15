@@ -2,7 +2,7 @@ import json
 import os
 import subprocess
 
-from ..config import runs_dir
+from ..config import netlist_cmd, runs_dir
 from .metrics import make_result
 from .parser import parse_result_file
 
@@ -76,6 +76,33 @@ class JobRunner:
         self.jobs.mark_running(job_id)
         self.runs.set_status(rid, "running")
         env = _job_context(job, run_dir, metrics_file)
+
+        # Delegated: an optional server-configured netlist step (VFP_NETLIST_CMD)
+        # assembles a fresh deck before the sim, so the wrapper finds a current
+        # deck for unattended jobs. The cellview rides the same VFP_JOB_* env.
+        # Unset for attended jobs (the plugin netlists in-session). Refuse the
+        # sim if the netlist step fails -- never sim a missing/stale deck.
+        ncmd = netlist_cmd()
+        if ncmd:
+            try:
+                nproc = subprocess.run(
+                    ncmd, cwd=str(run_dir), env=env,
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=timeout_s)
+            except subprocess.TimeoutExpired:
+                return self._fail(job_id, rid,
+                                  "netlist step timed out after %ss" % timeout_s)
+            except OSError as e:
+                return self._fail(job_id, rid, "could not launch netlist: %s" % e)
+            try:
+                self.runs.attach_text(
+                    rid, "netlistlog", "netlist.log",
+                    (nproc.stdout or b"").decode("utf-8", "replace"))
+            except (KeyError, OSError):
+                pass
+            if nproc.returncode != 0:
+                return self._fail(job_id, rid,
+                                  "netlist command exited %d" % nproc.returncode)
 
         try:
             proc = subprocess.run(
