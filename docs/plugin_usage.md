@@ -76,6 +76,38 @@ submitting proposals:
 - A pending proposal that is never approved is auto-expired tunnel-side
   after `VFP_PROPOSAL_TTL_S` seconds (default 300).
 
+## Run a simulation job
+
+With the tunnel running and a sim runner configured server-side
+(`VFP_SIM_CMD` points at a wrapper such as `scripts/cellview_spectre_job.py`),
+the **Run Sim Job** menu item — or `vfpRunSimJob(cv)` — pre-flights and runs a
+simulation of the current cellview:
+
+- **Pre-flight** refuses a cellview with unsaved changes (it names the cellview
+  and asks you to save first), so a sim never runs on a stale netlist. It also
+  computes a content **fingerprint** (test + connectivity + parameters); the
+  tunnel's freshness guard reuses a prior *done* job for identical inputs
+  instead of re-simulating.
+- The result carries **provenance** — which cellview the metrics came from, the
+  `netlist_hash`, and the netlist source — plus `metric_quality` for
+  non-finite/sentinel metrics, so a NaN never crosses as a bare number.
+
+### Attended (in-session) netlist — M10b
+
+`vfpRunSimJob(cv ?attended t)` assembles a *fresh, complete* spectre deck
+before running, by triggering `maeCreateNetlistForCorner` inside your live
+Virtuoso session via `vfpNetlistCellView(cv)`. This **reuses the running
+session's framework license** (no separate `si` / headless-Virtuoso checkout)
+and produces a runnable deck (design + PDK models + analyses + options) that a
+plain `si` netlist cannot.
+
+The deck is written under `<VFP_NETLIST_DIR>/<lib>__<cell>__<view>/netlist/`
+(default base `/tmp/vfp_nl`); the headless wrapper derives the same path from
+the job's cellview, so no per-job wiring is needed — set `VFP_NETLIST_DIR` to
+the same value for the plugin and the runner. `vfpNetlistCellView(cv ?corner
+"Nominal")` can also be called on its own to assemble a deck and return its
+path.
+
 ## Auto-refresh (event bridge)
 
 After **Connect**, the plugin starts `scripts/vfp_event_client.py` as a
@@ -126,6 +158,8 @@ dashboard.
 | `vfpUpdateDashboard()` | Refresh dashboard fields from the current window. |
 | `vfpConnect()` | Register the Virtuoso session with VFP Tunnel. |
 | `vfpExportDesignContext()` | Send the current schematic context to the tunnel. |
+| `vfpRunSimJob(cv [?attended t])` | Pre-flight + run a sim job; `?attended` assembles a fresh deck in-session first. |
+| `vfpNetlistCellView(cv [?corner "Nominal"])` | Assemble a complete deck via the live maestro session; return its path. |
 | `vfpEventBridgeStart()` / `vfpEventBridgeStop()` | Start / stop the tunnel event bridge. |
 | `vfpUnload()` | Stop the event bridge, remove menu, close dashboard. |
 | `vfpGetVersion()` | Plugin version string. |
