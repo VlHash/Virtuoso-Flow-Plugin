@@ -171,7 +171,7 @@ defun( vfpNetlistCellView (cv @key (corner "Nominal"))
 ;; a dirty cellview so we never sim a stale netlist. Returns (job_id reused)
 ;; or nil.
 defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nominal"))
-  prog( (pf jjson pfile res ok payload job jid jstatus rr)
+  prog( (pf sid jjson pfile res ok payload job jid jstatus rr)
     unless( cv
       vfpError("vfpRunSimJob: no cellview")
       return(nil) )
@@ -185,12 +185,17 @@ defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nom
     when( attended
       unless( vfpNetlistCellView(cv ?corner corner)
         return(nil) ) )
-    jjson = vfpToJson( vfpJObj("job" vfpJObj(
-              "cellview" vfpJObj("lib"  cv~>libName
-                                 "cell" cv~>cellName
-                                 "view" cv~>viewName)
-              "test"               test
-              "inputs_fingerprint" vfpAlistGet(pf "fingerprint"))) )
+    ;; M10a: carry the M8 session_id at the params level so the tunnel can
+    ;; resolve provenance.session from its registry (harmless until read).
+    sid = or(vfpStateGet('sessionId) "")
+    jjson = vfpToJson( vfpJObj(
+              "session_id" sid
+              "job" vfpJObj(
+                "cellview" vfpJObj("lib"  cv~>libName
+                                   "cell" cv~>cellName
+                                   "view" cv~>viewName)
+                "test"               test
+                "inputs_fingerprint" vfpAlistGet(pf "fingerprint"))) )
     pfile = sprintf(nil "%s/job_%d.json" vfpHelperOutDir() vfpRpcSeq())
     unless( vfpWriteFile(pfile jjson)
       vfpError("vfpRunSimJob: could not write job file")
