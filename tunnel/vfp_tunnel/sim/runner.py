@@ -4,7 +4,7 @@ import subprocess
 
 from ..config import runs_dir
 from .metrics import make_result
-from .parser import parse_metrics_file
+from .parser import parse_result_file
 
 
 def _job_context(job, run_dir, metrics_file):
@@ -99,15 +99,20 @@ class JobRunner:
             return self._fail(job_id, rid,
                               "simulator produced no metrics file (%s)" % metrics_file)
         try:
-            metrics = parse_metrics_file(str(mpath))
+            parsed = parse_result_file(str(mpath))
         except (OSError, ValueError) as e:
             return self._fail(job_id, rid, "could not parse metrics: %s" % e)
+        metrics = parsed.get("metrics") or {}
         if not metrics:
             return self._fail(job_id, rid, "no metrics parsed from %s" % metrics_file)
 
-        result = make_result({"metrics": metrics, "source": "spectre",
-                              "test": job.get("test"),
-                              "cellview": job.get("cellview")})
+        result_data = {"metrics": metrics, "source": "spectre",
+                       "test": job.get("test"), "cellview": job.get("cellview")}
+        # schema 0.2: merge the wrapper's provenance / metric_quality blocks
+        for key in ("provenance", "metric_quality"):
+            if parsed.get(key):
+                result_data[key] = parsed[key]
+        result = make_result(result_data)
         self.results.update(result)
         self.runs.link_result(rid, result["result_id"])
         self.runs.set_status(rid, "done")

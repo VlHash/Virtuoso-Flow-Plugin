@@ -20,11 +20,11 @@ def _parse_text(text):
     return metrics
 
 
-def parse_metrics_file(path):
-    """Read a metrics/result file into a {name: number} dict.
-
-    Supports JSON (a result object or a flat name->number map) and a simple
-    line-based text format (``name=value`` / ``name,value`` / ``name value``).
+def parse_result_file(path):
+    """Read a metrics/result file into result blocks: ``metrics`` (always) plus
+    ``provenance`` / ``metric_quality`` when the file is a JSON result object
+    (schema 0.2). A line-based text file (``name=value`` / ``name,value`` /
+    ``name value``) yields metrics only.
     """
     with open(path, encoding="utf-8") as f:
         text = f.read()
@@ -32,5 +32,16 @@ def parse_metrics_file(path):
     if stripped.startswith("{") or stripped.startswith("["):
         obj = json.loads(text)
         from .metrics import extract_metrics
-        return extract_metrics(obj)
-    return _parse_text(text)
+        out = {"metrics": extract_metrics(obj)}
+        if isinstance(obj, dict):
+            for key in ("provenance", "metric_quality"):
+                block = obj.get(key)
+                if isinstance(block, dict) and block:
+                    out[key] = block
+        return out
+    return {"metrics": _parse_text(text)}
+
+
+def parse_metrics_file(path):
+    """Back-compat shim: just the ``metrics`` dict (see ``parse_result_file``)."""
+    return parse_result_file(path)["metrics"]
