@@ -162,6 +162,15 @@ defun( vfpNetlistCellView (cv @key (corner "Nominal"))
   )
 )
 
+;; M10c: the cellview's last-saved time -> provenance.saved_at. ddGetObjLastModify
+;; on the view returns a human-readable string like "Oct 13 08:30:26 2025"; nil
+;; if the view can't be resolved.
+defun( vfpCvSavedAt (cv)
+  and( cv
+       car(errset(
+         ddGetObjLastModify( ddGetObj(cv~>libName cv~>cellName cv~>viewName) ) )) )
+)
+
 ;; ---- run a sim job (M9 closed loop) ---------------------------------
 ;; Pre-flight (dirty-check + content fingerprint), then create + run a sim
 ;; job on the tunnel. The fingerprint is ours (content-based), so the
@@ -195,7 +204,8 @@ defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nom
                                    "cell" cv~>cellName
                                    "view" cv~>viewName)
                 "test"               test
-                "inputs_fingerprint" vfpAlistGet(pf "fingerprint"))) )
+                "inputs_fingerprint" vfpAlistGet(pf "fingerprint")
+                "saved_at"           or(vfpCvSavedAt(cv) ""))) )
     pfile = sprintf(nil "%s/job_%d.json" vfpHelperOutDir() vfpRpcSeq())
     unless( vfpWriteFile(pfile jjson)
       vfpError("vfpRunSimJob: could not write job file")

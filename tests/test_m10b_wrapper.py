@@ -96,6 +96,17 @@ def test_provenance_hashes_deck_and_records_cellview(tmp_path):
     assert prov["fingerprint"] == "fp1"
 
 
+def test_provenance_saved_at_from_env(tmp_path, monkeypatch):
+    # M10c: saved_at is carried in by the runner (VFP_JOB_SAVED_AT), null if unset
+    deck = tmp_path / "input.scs"
+    deck.write_text("simulator lang=spectre\n", encoding="utf-8")
+    job = {"lib": "L", "cell": "C", "view": "schematic", "fingerprint": "fp"}
+    monkeypatch.setenv("VFP_JOB_SAVED_AT", "Oct 13 08:30:26 2025")
+    assert cj.provenance(job, str(deck), "reuse")["saved_at"] == "Oct 13 08:30:26 2025"
+    monkeypatch.delenv("VFP_JOB_SAVED_AT", raising=False)
+    assert cj.provenance(job, str(deck), "reuse")["saved_at"] is None
+
+
 def test_read_job_env_first_then_jobjson(tmp_path, monkeypatch):
     # env carries lib/test; job.json fills the rest (cell/view)
     (tmp_path / "job.json").write_text(json.dumps({
