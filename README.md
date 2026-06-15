@@ -25,7 +25,8 @@ simulation results, and rolled back when needed.
 
 ## Current Status
 
-Milestones 1–8, 11 (parts 1–2), and 13a are implemented.
+Milestones 1–9, 11, and 13a are implemented; Milestone 10 (cellview-specific
+simulation with in-session netlist) is in progress.
 
 | Milestone | Status |
 | --- | --- |
@@ -37,7 +38,9 @@ Milestones 1–8, 11 (parts 1–2), and 13a are implemented.
 | Result and constraint display | Done |
 | ADE integration + run/artifact tracking | Done |
 | Session identity: fingerprint dedup, heartbeat, reap, doctor (M8) | Done |
-| Connectivity snapshot/diff + transaction connectivity audit (M11) | Parts 1–2 |
+| Sim jobs: freshness guard, netlist dirty-check, real-spectre closed loop (M9) | Done |
+| Cellview-specific real-spectre + attended in-session netlist (M10) | In progress |
+| Connectivity snapshot/diff, txn audit, auto-net risk, TB lint, blame chain (M11) | Parts 1–5 |
 | Transport hardening: error taxonomy + UTF-8 audit (M13a) | Done |
 
 These milestones are covered by the Python test suite. The proposal
