@@ -6,7 +6,7 @@
   "type": "object",
   "required": ["schema_version", "metrics"],
   "properties": {
-    "schema_version": { "type": "string", "const": "0.1" },
+    "schema_version": { "type": "string", "enum": ["0.1", "0.2"] },
     "result_id": { "type": "string" },
     "source": { "type": "string", "description": "e.g. 'spectre', 'ade', 'manual'" },
     "cellview": { "$ref": "#/$defs/cellview" },
@@ -26,6 +26,23 @@
     "artifacts": {
       "type": "object",
       "description": "Label -> path of a stored artifact (log, metrics, ...).",
+      "additionalProperties": { "type": "string" }
+    },
+    "provenance": {
+      "type": "object",
+      "description": "Where this result came from (schema 0.2).",
+      "properties": {
+        "netlist_hash": { "type": "string", "description": "Digest of the exact deck simulated." },
+        "source_mode": { "type": "string", "description": "How the deck was produced, e.g. 'reuse' / 'si'." },
+        "cellview": { "$ref": "#/$defs/cellview" },
+        "saved_at": { "type": ["string", "null"], "description": "Cellview last-saved time (ddGetObjLastModify); null until plumbed." },
+        "fingerprint": { "type": "string", "description": "Inputs fingerprint the result was keyed on." },
+        "session": { "type": "string", "description": "Originating Virtuoso session (resolved from session_id)." }
+      }
+    },
+    "metric_quality": {
+      "type": "object",
+      "description": "Qualitative tag for non-finite / sentinel metrics so a NaN never crosses as a number (schema 0.2). E.g. GM=nan -> 'unconditional', 999 dB -> 'saturated'.",
       "additionalProperties": { "type": "string" }
     }
   },

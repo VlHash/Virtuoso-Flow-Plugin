@@ -38,12 +38,17 @@ def extract_metrics(obj):
 
 
 def make_result(data):
-    """Normalise an incoming result dict; assign id/version/source if absent."""
+    """Normalise an incoming result dict; assign id/version/source if absent.
+
+    schema 0.2 carries ``provenance`` and/or ``metric_quality`` blocks (kept
+    verbatim); the version defaults to 0.2 when either is present, else 0.1.
+    """
     r = dict(data) if isinstance(data, dict) else {}
     if not r.get("result_id"):
         r["result_id"] = "r_" + uuid.uuid4().hex[:12]
-    r.setdefault("schema_version", "0.1")
-    r.setdefault("source", "manual")
     r["metrics"] = extract_metrics(r)
+    has_02 = bool(r.get("provenance")) or bool(r.get("metric_quality"))
+    r.setdefault("schema_version", "0.2" if has_02 else "0.1")
+    r.setdefault("source", "manual")
     r.setdefault("created_at", time.strftime("%Y-%m-%dT%H:%M:%S"))
     return r
