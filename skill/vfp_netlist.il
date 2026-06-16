@@ -64,6 +64,7 @@ defun( vfpNetlistCellView (cv @key (corner "Nominal"))
       return(nil) )
     deck = sprintf(nil "%s/netlist/input.scs" od)
     when( isFile(deck)
+      errset( vfpWriteSavedAtSidecar(cv od) )
       vfpLog(sprintf(nil "netlisted %s/%s -> %s (corner %s)" lib cell deck corner))
       return(deck) )
     vfpError(sprintf(nil "vfpNetlistCellView: no deck produced at %s" deck))
@@ -78,4 +79,20 @@ defun( vfpCvSavedAt (cv)
   and( cv
        car(errset(
          ddGetObjLastModify( ddGetObj(cv~>libName cv~>cellName cv~>viewName) ) )) )
+)
+
+;; Write the cellview's saved_at next to the deck (<cvdir>/netlist/saved_at.txt)
+;; so the headless wrapper can stamp provenance.saved_at on the DELEGATED path,
+;; where no vfpRunSimJob computed it. Best-effort; attended jobs use the env
+;; value (VFP_JOB_SAVED_AT), which takes precedence in the wrapper.
+defun( vfpWriteSavedAtSidecar (cv od)
+  let( (sa port)
+    sa = vfpCvSavedAt(cv)
+    when( sa
+      port = car(errset( outfile(sprintf(nil "%s/netlist/saved_at.txt" od)) ))
+      when( port
+        fprintf(port "%s\n" sa)
+        close(port) ) )
+    sa
+  )
 )
