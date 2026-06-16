@@ -54,6 +54,30 @@ def test_is_local_mode(monkeypatch):
         assert dn._is_local() is expected
 
 
+def test_resolve_backend_plugin(monkeypatch):
+    monkeypatch.setenv("VFP_DELEGATED_BACKEND", "plugin")
+    assert dn.resolve_backend() is dn.plugin_backend
+
+
+def test_plugin_backend_done(monkeypatch):
+    # netlist over VFP's own channel: request -> poll netlist.get -> deck.
+    def fake(method, params=None, timeout=30):
+        if method == "netlist.request":
+            return {"request_id": "nlr_1", "status": "pending"}
+        return {"request": {"status": "done", "deck": "/d/input.scs"}}
+    monkeypatch.setattr(dn, "_tunnel_call", fake)
+    assert dn.plugin_backend("Project", "inv_tb", "schematic") == "/d/input.scs"
+
+
+def test_plugin_backend_failed(monkeypatch):
+    def fake(method, params=None, timeout=30):
+        if method == "netlist.request":
+            return {"request_id": "nlr_1"}
+        return {"request": {"status": "failed", "error": "no maestro"}}
+    monkeypatch.setattr(dn, "_tunnel_call", fake)
+    assert dn.plugin_backend("L", "C", "v") is None
+
+
 def test_command_backend_runs_and_returns_last_line(monkeypatch):
     # the command backend runs a server-configured command and returns its last
     # stdout line (the deck path); the cellview flows via VFP_JOB_* env.

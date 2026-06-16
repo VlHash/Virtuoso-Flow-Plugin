@@ -70,6 +70,18 @@ def test_netlist_complete_error(tmp_path, monkeypatch):
     assert got["status"] == "failed" and got["error"] == "no maestro setup"
 
 
+def test_netlist_pending_lists_unserviced(tmp_path, monkeypatch):
+    tun = _tunnel(tmp_path, monkeypatch)
+    r1 = tun._m_netlist_request(
+        {"cellview": {"lib": "L", "cell": "C1", "view": "v"}})["request_id"]
+    tun._m_netlist_request({"cellview": {"lib": "L", "cell": "C2", "view": "v"}})
+    assert tun._m_netlist_pending({})["count"] == 2     # what the plugin pulls
+    tun._m_netlist_complete({"request_id": r1, "deck": "/d.scs"})
+    pend = tun._m_netlist_pending({})
+    assert pend["count"] == 1                            # serviced one drops out
+    assert pend["requests"][0]["cellview"]["cell"] == "C2"
+
+
 def test_netlist_bad_params(tmp_path, monkeypatch):
     from vfp_tunnel.rpc.jsonrpc import JsonRpcError
     tun = _tunnel(tmp_path, monkeypatch)
