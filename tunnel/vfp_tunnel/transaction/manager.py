@@ -59,12 +59,15 @@ class TransactionStore:
         return self._transactions.get(transaction_id)
 
     def list(self, status=None):
-        """Return transactions newest-first (by timestamp), optionally filtered."""
+        """Return transactions newest-first, optionally filtered. Orders by the
+        epoch created_ts (precise within a second), then the ISO timestamp."""
         with self._lock:
             items = list(self._transactions.values())
         if status:
             items = [t for t in items if t.get("status") == status]
-        return sorted(items, key=lambda t: t.get("timestamp", ""), reverse=True)
+        return sorted(items,
+                      key=lambda t: (t.get("created_ts", 0), t.get("timestamp", "")),
+                      reverse=True)
 
     def last(self, status="applied"):
         """Return the most recent transaction (optionally of *status*) or None."""

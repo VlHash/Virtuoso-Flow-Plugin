@@ -16,7 +16,20 @@
     "cellview": { "$ref": "#/$defs/cellview" },
     "before": { "type": "array", "items": { "$ref": "#/$defs/param_value" } },
     "after": { "type": "array", "items": { "$ref": "#/$defs/param_value" } },
-    "timestamp": { "type": "string", "description": "ISO-8601 timestamp" },
+    "timestamp": { "type": "string", "description": "ISO-8601 timestamp (second-granular)" },
+    "created_ts": { "type": "number", "description": "Epoch seconds; orders same-second changes precisely for the blame chain." },
+    "actor": { "type": "string", "description": "Who applied/rolled back, e.g. 'agent' or 'user'." },
+    "session": { "type": "string", "description": "Originating Virtuoso session_id (M8 handle)." },
+    "session_fingerprint": {
+      "type": "object",
+      "description": "Durable identity of the applying Virtuoso, snapshotted at create.",
+      "properties": {
+        "virtuoso_pid": { "type": "string" },
+        "virtuoso_start": { "type": "string" },
+        "display": { "type": "string" },
+        "cds_lib": { "type": "string" }
+      }
+    },
     "linked_results": {
       "type": "array",
       "items": { "type": "string", "description": "result_id" }

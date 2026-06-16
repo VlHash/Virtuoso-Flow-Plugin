@@ -38,8 +38,12 @@ def make_transaction(data):
     t.setdefault("status", "applied")
     t.setdefault("before", [])
     t.setdefault("after", [])
+    ts = _now()
     if "timestamp" not in t:
-        t["timestamp"] = _iso(_now())
+        t["timestamp"] = _iso(ts)
+    # Epoch seconds so the blame chain can order same-second bursts precisely
+    # (the ISO timestamp is second-granular). Preserved if already present.
+    t.setdefault("created_ts", ts)
     return t
 
 
