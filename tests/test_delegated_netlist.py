@@ -15,8 +15,15 @@ if str(_SCRIPTS) not in sys.path:
 import delegated_netlist as dn  # noqa: E402
 
 
-def test_resolve_backend_default_is_vcli(monkeypatch):
+def test_resolve_backend_default_is_plugin(monkeypatch):
+    # default flipped vcli -> plugin: delegated netlisting goes over VFP's own
+    # channel (a VFP-managed headless Virtuoso / `vfp daemon`), not vcli.
     monkeypatch.delenv("VFP_DELEGATED_BACKEND", raising=False)
+    assert dn.resolve_backend() is dn.plugin_backend
+
+
+def test_resolve_backend_vcli_opt_in(monkeypatch):
+    monkeypatch.setenv("VFP_DELEGATED_BACKEND", "vcli")
     assert dn.resolve_backend() is dn.vcli_backend
 
 

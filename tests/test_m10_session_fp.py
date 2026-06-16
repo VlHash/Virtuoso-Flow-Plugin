@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import threading
@@ -11,7 +12,9 @@ _FAKE = os.path.join(os.path.dirname(__file__), "fixtures", "fake_spectre.py")
 @pytest.fixture
 def running_tunnel(tmp_path, monkeypatch):
     monkeypatch.setenv("VFP_HOME", str(tmp_path))
-    monkeypatch.setenv("VFP_SIM_CMD", "%s %s" % (sys.executable, _FAKE))
+    # JSON array (exact argv), not a shlex string: Windows paths have
+    # backslashes that POSIX shlex would eat (cf. #45 / test_runner.py).
+    monkeypatch.setenv("VFP_SIM_CMD", json.dumps([sys.executable, _FAKE]))
     import importlib
     import vfp_tunnel.config as cfg
     importlib.reload(cfg)

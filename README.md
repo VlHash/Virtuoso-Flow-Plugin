@@ -227,6 +227,9 @@ scripts/vfp session list
 scripts/vfp session current
 scripts/vfp session reap                       # drop idle (dead) sessions
 scripts/vfp doctor                             # tunnel + session health
+scripts/vfp daemon start          # VFP-managed headless Virtuoso (delegated netlist)
+scripts/vfp daemon status
+scripts/vfp daemon stop
 scripts/vfp context show          # latest exported design context
 scripts/vfp context import --file <ctx.json>   # load a context (testing)
 scripts/vfp proposal list                      # design-change proposals
