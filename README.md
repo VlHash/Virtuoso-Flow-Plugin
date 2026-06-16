@@ -52,6 +52,53 @@ to an `expired` status after a configurable TTL (default 5 minutes; set
 `VFP_SESSION_TTL_S` (default `0` = disabled) or dropped on demand with
 `scripts/vfp session reap`.
 
+## Architecture
+
+Two halves share the `schemas/` JSON contract: the **plugin** (in Virtuoso,
+SKILL) owns design state and the netlist; the **tunnel** (stdlib Python daemon)
+owns the agent interface, jobs, results, and history. Deck assembly for a
+simulation is pluggable — the plugin in the live session (attended), a delegated
+backend (our own channel, vcli, an OCEAN/direct-spectre command, or a custom
+callable), or a VFP-managed headless Virtuoso — all writing to one convention
+path the sim wrapper reads.
+
+```
+ DRIVERS:  AI agent (MCP)  ·  CLI: scripts/vfp  ·  designer @ Virtuoso GUI
+        │  JSON-RPC over TCP  (UTF-8 wire)
+        ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ VFP TUNNEL — daemon (stdlib Python)            transport ─ dispatcher        │
+│  session registry   proposal / transaction        SIM                       │
+│   dedup / heartbeat   review → apply → rollback     job store + freshness    │
+│   reap / doctor       connectivity audit            RUNNER: netlist step     │
+│  context store        checkpoint · blame · batch            → sim step       │
+│  constraint engine    netlist-request store         result store:           │
+│  run / artifact store  event bus (log + long-poll)   metrics + provenance    │
+│  envelope · ledger (M12)                             + metric_quality (0.2)  │
+└───────────────┬──────────────────────────────────────────────────────────┘
+   ▲ skillrpc    │ event bridge (long-poll)
+   │             ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│ VFP PLUGIN — in Virtuoso (SKILL)                                             │
+│  menu + dashboard · context export · sim preflight (dirty-check + fingerprint)│
+│  proposal review · transaction apply/rollback · event client                 │
+│  NETLIST ASSEMBLER:  vfpNetlistCellView ──► maeCreateNetlistForCorner         │
+└────────────────────────────────────────────────────────────────────────────┘
+
+ DECK ASSEMBLY (a complete spectre deck) — pluggable backend:
+   attended    the plugin in the user's LIVE Virtuoso session
+   delegated   delegated_netlist.py ─► plugin (own channel) · vcli · command
+                                       (OCEAN/direct-spectre) · module:callable
+   VFP Daemon  a VFP-managed persistent `virtuoso -nograph` + plugin
+        ▼  deck → $VFP_NETLIST_DIR/<lib>__<cell>__<view>/netlist/input.scs
+        ▼
+ SIM WRAPPER (cellview_spectre_job.py): deck → SPECTRE → PSF
+        ▼                              → metrics + provenance + metric_quality
+ CADENCE: Virtuoso (Maestro/ADE) · Spectre · PDK    CONTRACT: schemas/
+```
+
+Full read-guide: [docs/architecture.md](docs/architecture.md).
+
 ## Requirements
 
 - Cadence Virtuoso, developed against the IC23.1 SKILL API.
@@ -238,6 +285,7 @@ allows MVP contract changes to land atomically.
 ## Documentation
 
 - [Handoff & roadmap](docs/HANDOFF.md) — start here to pick up the project
+- [Architecture](docs/architecture.md) — the system at a glance (text diagram)
 - [Plugin usage](docs/plugin_usage.md)
 - [Development notes](docs/development_notes.md)
 - [Tunnel README](tunnel/README.md)
