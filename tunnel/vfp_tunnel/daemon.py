@@ -281,6 +281,18 @@ class Tunnel:
         if not isinstance(data, dict):
             raise JsonRpcError(INVALID_PARAMS, "params.transaction must be an object")
 
+        # Bind the actor: who applied this change, in which session. session_id
+        # resolves to the durable M8 fingerprint (snapshotted now, while live).
+        data = dict(data)
+        sid = params.get("session_id")
+        if sid and not data.get("session"):
+            data["session"] = sid
+            fp = self._session_fingerprint(sid)
+            if fp:
+                data["session_fingerprint"] = fp
+        if params.get("actor") and not data.get("actor"):
+            data["actor"] = params["actor"]
+
         # Build the complete record first (assigns transaction_id), then
         # enforce modify-permissions and validate against the schema.
         candidate = make_transaction(data)
