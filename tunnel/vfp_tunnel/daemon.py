@@ -26,6 +26,7 @@ from .rpc.transport import make_server
 from .session.registry import Registry
 from .sim.job import make_job
 from .sim.job_store import JobStore
+from .sim.netlist_requests import NetlistRequestStore
 from .sim.runner import JobRunner
 from .sim.manager import ResultStore
 from .sim.metrics import make_result
@@ -50,6 +51,7 @@ class Tunnel:
         self.results = ResultStore()
         self.runs = RunStore()
         self.jobs = JobStore()
+        self.netlist_requests = NetlistRequestStore()
         self.events = EventLog()
         # Default modify-permissions (empty => allow all). Milestone 6's
         # constraint engine will populate this from the constraint file.
@@ -106,6 +108,10 @@ class Tunnel:
         d.register("job.mark_done",   self._m_job_mark_done)
         d.register("job.mark_failed", self._m_job_mark_failed)
         d.register("job.run",         self._m_job_run)
+        # Netlist over VFP's own channel: request -> plugin (event) -> deck
+        d.register("netlist.request",  self._m_netlist_request)
+        d.register("netlist.complete", self._m_netlist_complete)
+        d.register("netlist.get",      self._m_netlist_get)
         # Event stream
         d.register("event.list", self._m_event_list)
         d.register("event.wait", self._m_event_wait)
@@ -585,6 +591,41 @@ class Tunnel:
                        timeout_s=sim_timeout_s())
         except Exception as e:  # noqa: BLE001 - background thread guard
             self.log.error("job runner crashed for %s: %s", jid, e)
+
+    # ---- netlist over VFP's own channel (request -> plugin -> deck) ------
+    def _m_netlist_request(self, params):
+        """Request a netlist from a connected plugin: store it pending and emit
+        a `netlist.request` event the plugin services (vfpNetlistCellView). The
+        caller polls `netlist.get` for the deck. VFP's own channel -- no external
+        netlister (vcli etc.)."""
+        cv = params.get("cellview")
+        if not isinstance(cv, dict):
+            raise JsonRpcError(INVALID_PARAMS, "params.cellview must be an object")
+        req = self.netlist_requests.create(cv, params.get("corner"))
+        self.events.emit("netlist.request",
+                         {"request_id": req["request_id"], "cellview": cv,
+                          "corner": req["corner"]})
+        return {"request_id": req["request_id"], "status": req["status"]}
+
+    def _m_netlist_complete(self, params):
+        """A plugin reports the assembled deck (or an error) for a request."""
+        rid = params.get("request_id")
+        if not rid:
+            raise JsonRpcError(INVALID_PARAMS, "params.request_id required")
+        req = self.netlist_requests.complete(rid, params.get("deck"),
+                                             params.get("error"))
+        if req is None:
+            raise JsonRpcError(NOT_FOUND, "unknown request_id: %s" % rid)
+        self.events.emit("netlist.complete",
+                         {"request_id": rid, "status": req["status"]})
+        return {"request_id": rid, "status": req["status"]}
+
+    def _m_netlist_get(self, params):
+        rid = params.get("request_id")
+        req = self.netlist_requests.get(rid) if rid else None
+        if req is None:
+            raise JsonRpcError(NOT_FOUND, "unknown request_id: %s" % rid)
+        return {"request": req}
 
     def _job_set(self, method, params, **fields):
         jid = params.get("job_id")
