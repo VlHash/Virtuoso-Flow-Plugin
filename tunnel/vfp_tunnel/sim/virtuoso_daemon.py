@@ -306,7 +306,7 @@ def serve_main(argv=None):
     if not ready:
         for ln in d.tail(40):
             sys.stderr.write(ln + "\n")
-        d.stop()
+        d.stop(timeout=3)
         _unlink_state()
         return 3
     try:
@@ -319,7 +319,9 @@ def serve_main(argv=None):
     except KeyboardInterrupt:
         pass
     finally:
-        d.stop()
+        # The poll-loop CIW never reads a graceful exit() on stdin, so keep the
+        # graceful wait short and fall through to terminate/kill.
+        d.stop(timeout=3)
         _unlink_state()
     return 0
 

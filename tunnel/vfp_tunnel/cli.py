@@ -213,7 +213,7 @@ def cmd_daemon_stop(args):
         os.kill(int(pid), signal.SIGTERM)
     except OSError as e:
         return _fail("could not signal supervisor pid %s: %s" % (pid, e))
-    deadline = time.time() + 15.0
+    deadline = time.time() + 20.0
     while time.time() < deadline:
         if not _pid_alive(pid):
             print("VFP Daemon stopped.")
