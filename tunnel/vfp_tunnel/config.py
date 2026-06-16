@@ -142,6 +142,19 @@ def netlist_cmd():
     return _split_command(raw)
 
 
+def virtuoso_cmd():
+    """Argv to launch a VFP-managed headless Virtuoso (VFP_VIRTUOSO_CMD, JSON
+    array or shlex string); None if unset. Server-configured only -- the VFP
+    Daemon (sim/virtuoso_daemon.py) falls back to ``virtuoso -nograph``. This is
+    the standalone counterpart of the attended path: a persistent plugin that
+    services netlist.request over VFP's own channel, no GUI and no vcli.
+    """
+    raw = os.environ.get("VFP_VIRTUOSO_CMD")
+    if not raw:
+        return None
+    return _split_command(raw)
+
+
 def sim_metrics_file():
     return os.environ.get("VFP_SIM_METRICS_FILE") or DEFAULT_SIM_METRICS_FILE
 
