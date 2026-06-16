@@ -75,8 +75,42 @@ defun( vfpEventBridgeStop ()
 ;; ---- ipc handlers ----------------------------------------------------
 ;; Data arrives in arbitrary chunks: buffer, consume complete lines, keep
 ;; the trailing partial line. One GUI refresh per chunk, not per line.
+;; Service pending netlist requests from the tunnel: for each, assemble the deck
+;; (vfpNetlistCellView) and report it back via netlist.complete. Driven by the
+;; netlist.request event -- delegated netlist over VFP's OWN channel (no vcli).
+defun( vfpServiceNetlistRequests ()
+  let( (res reqs)
+    res = vfpRpcExec("netlist.pending" nil)
+    when( car(res)
+      reqs = vfpAlistGet(cadr(res) "requests")
+      foreach( req reqs
+        let( (rid cv lib cell view corner deck)
+          rid    = vfpAlistGet(req "request_id")
+          cv     = vfpAlistGet(req "cellview")
+          lib    = vfpAlistGet(cv "lib")
+          cell   = vfpAlistGet(cv "cell")
+          view   = vfpAlistGet(cv "view")
+          corner = or(vfpAlistGet(req "corner") "Nominal")
+          deck   = and(lib cell view
+                       vfpNetlistCellView(dbOpenCellViewByType(lib cell view "" "r")
+                                          ?corner corner))
+          when( rid
+            if( deck
+              vfpRpcExec("netlist.complete"
+                list("--param" sprintf(nil "request_id=%s" rid)
+                     "--param" sprintf(nil "deck=%s" deck)))
+              vfpRpcExec("netlist.complete"
+                list("--param" sprintf(nil "request_id=%s" rid)
+                     "--param" "error=netlist failed")) ) )
+        )
+      )
+    )
+    t
+  )
+)
+
 defun( vfpEventBridgeDataH (cid data)
-  let( (buf pos line sawEvent sawProposal)
+  let( (buf pos line sawEvent sawProposal sawNetlist)
     cid  ;; unused
     buf = strcat( or(vfpStateGet('eventBuf) "") data )
     pos = nindex(buf "\n")
@@ -92,6 +126,7 @@ defun( vfpEventBridgeDataH (cid data)
           vfpLog(sprintf(nil "event %L: %s" seq or(type "?")))
           sawEvent = t
           when( and(type nindex(type "proposal.") == 1) sawProposal = t )
+          when( equal(type "netlist.request") sawNetlist = t )
         )
       )
       pos = nindex(buf "\n")
@@ -100,6 +135,8 @@ defun( vfpEventBridgeDataH (cid data)
     when( sawEvent
       when( and(sawProposal isCallable('vfpFetchPendingProposals))
         errset(vfpFetchPendingProposals()) )
+      when( and(sawNetlist isCallable('vfpServiceNetlistRequests))
+        errset(vfpServiceNetlistRequests()) )
       when( isCallable('vfpUpdateDashboard) errset(vfpUpdateDashboard()) )
     )
     t

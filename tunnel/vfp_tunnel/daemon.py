@@ -112,6 +112,7 @@ class Tunnel:
         d.register("netlist.request",  self._m_netlist_request)
         d.register("netlist.complete", self._m_netlist_complete)
         d.register("netlist.get",      self._m_netlist_get)
+        d.register("netlist.pending",  self._m_netlist_pending)
         # Event stream
         d.register("event.list", self._m_event_list)
         d.register("event.wait", self._m_event_wait)
@@ -626,6 +627,12 @@ class Tunnel:
         if req is None:
             raise JsonRpcError(NOT_FOUND, "unknown request_id: %s" % rid)
         return {"request": req}
+
+    def _m_netlist_pending(self, params):
+        """Pending requests a connected plugin pulls (on a netlist.request event)
+        to service them."""
+        reqs = self.netlist_requests.pending()
+        return {"requests": reqs, "count": len(reqs)}
 
     def _job_set(self, method, params, **fields):
         jid = params.get("job_id")

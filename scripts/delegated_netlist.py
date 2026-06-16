@@ -35,8 +35,10 @@ import importlib
 import json
 import os
 import shlex
+import socket
 import subprocess
 import sys
+import time
 
 # ---- vcli backend (default) -----------------------------------------
 # VFP_VCLI_TARGET: user@host for ssh, or empty/'local'/'localhost' to run vcli
@@ -49,6 +51,11 @@ SPECTRE = os.environ.get("VFP_VCLI_SPECTRE_CMD",
                          "/opt/cadence/SPECTRE231/bin/spectre")
 SKILL_DIR = os.environ.get("VFP_REMOTE_SKILL_DIR",
                            "/home/meow/Documents/VFP/skill")
+
+# ---- plugin backend: VFP's own tunnel <-> plugin channel ------------
+TUNNEL_HOST = os.environ.get("VFP_HOST", "127.0.0.1")
+TUNNEL_PORT = int(os.environ.get("VFP_PORT", "47891"))
+PLUGIN_TIMEOUT = int(os.environ.get("VFP_PLUGIN_NETLIST_TIMEOUT", "120"))
 
 
 def _q(s):
@@ -136,9 +143,60 @@ def command_backend(lib, cell, view, corner="Nominal"):
     return out.splitlines()[-1].strip() if out else None
 
 
+# ---- plugin backend: netlist over VFP's own tunnel <-> plugin channel
+
+def _tunnel_call(method, params=None, timeout=30):
+    """Minimal newline-delimited JSON-RPC call to the VFP tunnel."""
+    req = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}}
+    with socket.create_connection((TUNNEL_HOST, TUNNEL_PORT), timeout=timeout) as s:
+        s.settimeout(timeout)
+        s.sendall((json.dumps(req) + "\n").encode("utf-8"))
+        buf = b""
+        while b"\n" not in buf:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+    resp = json.loads(buf.split(b"\n", 1)[0].decode("utf-8", "replace"))
+    if resp.get("error"):
+        raise RuntimeError(resp["error"].get("message") or resp["error"])
+    return resp.get("result") or {}
+
+
+def plugin_backend(lib, cell, view, corner="Nominal"):
+    """Netlist over VFP's OWN channel: ask the tunnel to request a netlist from a
+    connected plugin (which assembles it via vfpNetlistCellView), then poll for
+    the deck. No external netlister."""
+    cv = {"lib": lib, "cell": cell, "view": view}
+    try:
+        rid = _tunnel_call("netlist.request",
+                           {"cellview": cv, "corner": corner}).get("request_id")
+    except (OSError, ValueError, RuntimeError) as e:
+        sys.stderr.write("delegated_netlist[plugin]: %s\n" % e)
+        return None
+    if not rid:
+        return None
+    deadline = time.time() + PLUGIN_TIMEOUT
+    while time.time() < deadline:
+        try:
+            r = _tunnel_call("netlist.get", {"request_id": rid}).get("request") or {}
+        except (OSError, ValueError, RuntimeError) as e:
+            sys.stderr.write("delegated_netlist[plugin]: %s\n" % e)
+            return None
+        if r.get("status") == "done":
+            return r.get("deck") or None
+        if r.get("status") == "failed":
+            sys.stderr.write("delegated_netlist[plugin]: %s\n" % r.get("error"))
+            return None
+        time.sleep(0.5)
+    sys.stderr.write("delegated_netlist[plugin]: timed out after %ss\n" % PLUGIN_TIMEOUT)
+    return None
+
+
 # ---- backend selection ----------------------------------------------
 
-_BUILTIN_BACKENDS = {"vcli": vcli_backend, "command": command_backend}
+_BUILTIN_BACKENDS = {"vcli": vcli_backend, "command": command_backend,
+                     "plugin": plugin_backend}
 
 
 def resolve_backend(name=None):

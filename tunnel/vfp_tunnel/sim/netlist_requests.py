@@ -44,3 +44,10 @@ class NetlistRequestStore:
         with self._lock:
             rec = self._reqs.get(request_id)
             return dict(rec) if rec else None
+
+    def pending(self):
+        """All requests still awaiting a plugin -- what a connected plugin pulls
+        (on a netlist.request event) to service them."""
+        with self._lock:
+            return [dict(r) for r in self._reqs.values()
+                    if r["status"] == "pending"]
