@@ -55,11 +55,17 @@ let( (here skillDir mods ok)
 
   ;; Headless service loop: poll the tunnel for pending netlist requests and
   ;; service each (vfpServiceNetlistRequests -> vfpNetlistCellView ->
-  ;; netlist.complete). Runs until the managing daemon terminates the process.
+  ;; netlist.complete). Each poll spawns a short rpc subprocess, so the interval
+  ;; is tunable via VFP_DAEMON_POLL_S (default 2s) to trade latency for churn.
+  ;; Runs until the managing daemon terminates the process.
   when( ok
-    while( t
-      errset( vfpServiceNetlistRequests() )
-      sleep(1)
+    let( (pollS)
+      pollS = atof( or(getShellEnvVar("VFP_DAEMON_POLL_S") "2") )
+      when( pollS <= 0 pollS = 2.0 )
+      while( t
+        errset( vfpServiceNetlistRequests() )
+        sleep( pollS )
+      )
     )
   )
   ok
