@@ -68,10 +68,16 @@ class VirtuosoDaemon:
     serve()       foreground supervisor loop; restarts on unexpected exit.
     """
 
-    def __init__(self, command=None, boot=None, ready_marker=READY_MARKER,
-                 ready_timeout_s=120):
+    def __init__(self, command=None, boot=None, cwd=None,
+                 ready_marker=READY_MARKER, ready_timeout_s=120):
         self.command = list(command) if command else resolve_command()
         self.boot = boot or default_boot_il()
+        # Launch dir: a Cadence tool resolves a relative cds.lib against its cwd,
+        # so a managed Virtuoso usually needs to start where the cds.lib lives.
+        # The Cadence env (CDS_LIC_FILE, PATH, ...) is supplied by the caller's
+        # environment, as for any Cadence tool -- the daemon does not wrap a shell
+        # (a csh -c wrapper would slurp the piped boot stdin).
+        self.cwd = cwd
         self.ready_marker = ready_marker
         self.ready_timeout_s = ready_timeout_s
         self._proc = None
@@ -90,9 +96,14 @@ class VirtuosoDaemon:
         with self._log_lock:
             self._tail = []
         try:
+            # Binary pipes (NOT text mode): Virtuoso's banner has non-ASCII bytes
+            # and a headless Cadence env is often LANG=C, so a text-mode pipe
+            # would default to ASCII and a decode error would kill the drain
+            # thread -> the stdout pipe fills -> the CIW blocks before our boot
+            # ever runs. We decode each line utf-8/replace ourselves instead.
             self._proc = subprocess.Popen(
                 self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
+                stderr=subprocess.STDOUT, cwd=self.cwd)
         except OSError as e:
             self._proc = None
             raise RuntimeError(
@@ -103,7 +114,7 @@ class VirtuosoDaemon:
         # -nograph evaluates the CIW stdin, so a single load() boots the plugin;
         # stdin stays open afterwards to keep the CIW alive (closed in stop()).
         try:
-            self._proc.stdin.write('load("%s")\n' % self.boot)
+            self._proc.stdin.write(('load("%s")\n' % self.boot).encode("utf-8"))
             self._proc.stdin.flush()
         except (OSError, ValueError):
             pass
@@ -115,8 +126,8 @@ class VirtuosoDaemon:
         proc = self._proc
         if proc is None or proc.stdout is None:
             return
-        for line in proc.stdout:
-            line = line.rstrip("\n")
+        for raw in proc.stdout:
+            line = raw.decode("utf-8", "replace").rstrip("\n")
             with self._log_lock:
                 self._tail.append(line)
                 if len(self._tail) > _TAIL_MAX:
@@ -156,7 +167,7 @@ class VirtuosoDaemon:
         if proc is not None and proc.poll() is None:
             try:
                 if proc.stdin:
-                    proc.stdin.write("exit()\n")
+                    proc.stdin.write(b"exit()\n")
                     proc.stdin.flush()
                     proc.stdin.close()
             except (OSError, ValueError):
@@ -189,6 +200,7 @@ class VirtuosoDaemon:
                         if (alive and self._started_at) else None,
             "command": list(self.command),
             "boot": self.boot,
+            "cwd": self.cwd,
         }
 
     def tail(self, n=20):
