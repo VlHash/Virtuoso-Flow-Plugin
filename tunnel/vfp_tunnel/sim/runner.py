@@ -142,9 +142,13 @@ class JobRunner:
             if parsed.get(key):
                 result_data[key] = parsed[key]
         # F.3: stamp the originating session (bound at job.create) into provenance
-        if job.get("session"):
+        # — the raw id plus the durable fingerprint snapshot (survives reaping).
+        if job.get("session") or job.get("session_fingerprint"):
             prov = dict(result_data.get("provenance") or {})
-            prov["session"] = job["session"]
+            if job.get("session"):
+                prov["session"] = job["session"]
+            if job.get("session_fingerprint"):
+                prov["session_fingerprint"] = job["session_fingerprint"]
             result_data["provenance"] = prov
         result = make_result(result_data)
         self.results.update(result)
