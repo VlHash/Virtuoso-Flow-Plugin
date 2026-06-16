@@ -39,6 +39,8 @@ import subprocess
 import sys
 
 # ---- vcli backend (default) -----------------------------------------
+# VFP_VCLI_TARGET: user@host for ssh, or empty/'local'/'localhost' to run vcli
+# directly (co-located -- the common case when the tunnel runs on the vcli host).
 
 TARGET = os.environ.get("VFP_VCLI_TARGET", "meow@192.168.185.231")
 VCLI = os.environ.get("VFP_VCLI_BIN", "/home/meow/.cargo/bin/vcli")
@@ -54,21 +56,35 @@ def _q(s):
     return "'" + str(s).replace("'", "'\\''") + "'"
 
 
+def _is_local():
+    return TARGET.strip().lower() in ("", "local", "localhost")
+
+
 def _vcli_exec(skill_expr, timeout=180):
-    """Evaluate one SKILL expression in the persistent Virtuoso via vcli/ssh.
-    Returns (ok, value_or_error)."""
-    remote = ("RB_DAEMON_PATH=%s VB_SPECTRE_CMD=%s %s --quiet --format json "
-              "skill exec %s"
-              % (_q(DAEMON), _q(SPECTRE), _q(VCLI), _q(skill_expr)))
-    proc = subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR",
-         "-o", "ConnectTimeout=10", TARGET, remote],
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+    """Evaluate one SKILL expression in the persistent Virtuoso via vcli.
+
+    Local when VFP_VCLI_TARGET is empty/'local'/'localhost' -- vcli is
+    co-located with the worker (the common delegated case: the tunnel and vcli
+    on one host), so run it directly, no ssh. Otherwise go over ssh (vcli's
+    dynamic port is not forwarded off the VM). Returns (ok, value_or_error)."""
+    if _is_local():
+        argv = [VCLI, "--quiet", "--format", "json", "skill", "exec", skill_expr]
+        env = dict(os.environ, RB_DAEMON_PATH=DAEMON, VB_SPECTRE_CMD=SPECTRE)
+        proc = subprocess.run(argv, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, timeout=timeout)
+    else:
+        remote = ("RB_DAEMON_PATH=%s VB_SPECTRE_CMD=%s %s --quiet --format json "
+                  "skill exec %s"
+                  % (_q(DAEMON), _q(SPECTRE), _q(VCLI), _q(skill_expr)))
+        proc = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "LogLevel=ERROR",
+             "-o", "ConnectTimeout=10", TARGET, remote],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
     out = (proc.stdout or b"").decode("utf-8", "replace").strip()
     try:
         res = json.loads(out)
     except ValueError:
-        return False, out or ("ssh/vcli failed (exit %d)" % proc.returncode)
+        return False, out or ("vcli failed (exit %d)" % proc.returncode)
     if res.get("status") != "success" or res.get("errors"):
         return False, res.get("errors") or res
     return True, (res.get("output") or "").strip()

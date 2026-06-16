@@ -46,6 +46,14 @@ def test_netlist_accepts_callable_backend():
     assert calls == [("L", "C", "v", "Nominal")]
 
 
+def test_is_local_mode(monkeypatch):
+    # empty / local / localhost -> run vcli directly (co-located); else ssh.
+    for val, expected in [("", True), ("local", True), ("LOCALHOST", True),
+                          ("  local  ", True), ("meow@host", False)]:
+        monkeypatch.setattr(dn, "TARGET", val)
+        assert dn._is_local() is expected
+
+
 def test_command_backend_runs_and_returns_last_line(monkeypatch):
     # the command backend runs a server-configured command and returns its last
     # stdout line (the deck path); the cellview flows via VFP_JOB_* env.
