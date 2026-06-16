@@ -8,6 +8,7 @@ Python 3.6+. See the tunnel README for the command set.
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -128,6 +129,97 @@ def cmd_tunnel_status(args):
         if k in running:
             print("  %-11s %s" % (k + ":", running[k]))
     return 0
+
+
+# ---- daemon (VFP-managed headless Virtuoso) -------------------------
+def _pid_alive(pid):
+    """True if a supervisor pid is running. POSIX-only check (the daemon is a
+    Cadence/Linux feature); on Windows os.kill(pid, 0) would TerminateProcess,
+    so report not-running there."""
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0 or os.name == "nt":
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError as e:
+        import errno
+        return e.errno == errno.EPERM   # exists but owned by another user
+    return True
+
+
+def cmd_daemon_start(args):
+    """Spawn a detached supervisor (vfp_tunnel.sim.virtuoso_daemon) that launches
+    and keeps a headless Virtuoso up, then poll its state file for readiness.
+    Run it from a Cadence-sourced shell (PATH/CDS_LIC_FILE) at the cds.lib dir."""
+    from .sim.virtuoso_daemon import read_state
+    st = read_state()
+    if st and _pid_alive(st.get("supervisor_pid")):
+        print("VFP Daemon already running (supervisor pid %s, status %s)"
+              % (st.get("supervisor_pid"), st.get("status")))
+        return 0
+    ensure_dirs()
+    cmd = [sys.executable, "-m", "vfp_tunnel.sim.virtuoso_daemon",
+           "--cwd", args.cwd or os.getcwd()]
+    if args.boot:
+        cmd += ["--boot", args.boot]
+    out = open(str(log_dir() / "virtuoso_daemon.out"), "ab")
+    kwargs = {"stdout": out, "stderr": out, "stdin": subprocess.DEVNULL,
+              "close_fds": True}
+    if os.name == "nt":
+        kwargs["creationflags"] = 0x00000008 | 0x00000200
+    else:
+        kwargs["start_new_session"] = True
+    subprocess.Popen(cmd, **kwargs)
+    deadline = time.time() + (args.timeout or 200.0)
+    while time.time() < deadline:
+        st = read_state()
+        if st and st.get("status") == "ready":
+            print("VFP Daemon ready (supervisor pid %s, virtuoso pid %s)"
+                  % (st.get("supervisor_pid"), st.get("virtuoso_pid")))
+            return 0
+        if st and st.get("status") == "failed":
+            return _fail("VFP Daemon boot failed; see %s"
+                         % (log_dir() / "virtuoso_daemon.out"))
+        time.sleep(0.5)
+    return _fail("VFP Daemon did not become ready; see %s"
+                 % (log_dir() / "virtuoso_daemon.out"))
+
+
+def cmd_daemon_status(args):
+    from .sim.virtuoso_daemon import read_state
+    st = read_state()
+    if not st or not _pid_alive(st.get("supervisor_pid")):
+        print("VFP Daemon: not running")
+        return 1
+    print("VFP Daemon: %s" % st.get("status"))
+    for k in ("supervisor_pid", "virtuoso_pid", "ready", "boot", "cwd",
+              "started_at"):
+        if k in st:
+            print("  %-15s %s" % (k + ":", st[k]))
+    return 0
+
+
+def cmd_daemon_stop(args):
+    from .sim.virtuoso_daemon import read_state
+    st = read_state()
+    pid = st.get("supervisor_pid") if st else None
+    if not _pid_alive(pid):
+        print("VFP Daemon is not running.")
+        return 0
+    try:
+        os.kill(int(pid), signal.SIGTERM)
+    except OSError as e:
+        return _fail("could not signal supervisor pid %s: %s" % (pid, e))
+    deadline = time.time() + 15.0
+    while time.time() < deadline:
+        if not _pid_alive(pid):
+            print("VFP Daemon stopped.")
+            return 0
+        time.sleep(0.3)
+    return _fail("VFP Daemon supervisor still alive (pid %s)" % pid)
 
 
 # ---- session --------------------------------------------------------
@@ -557,6 +649,22 @@ def build_parser():
     s.add_argument("--host")
     s.add_argument("--port")
     s.set_defaults(func=cmd_tunnel_status)
+
+    daemon = groups.add_parser(
+        "daemon",
+        help="manage a VFP-managed headless Virtuoso (delegated netlist)")
+    dsub = daemon.add_subparsers(dest="cmd")
+    ds = dsub.add_parser("start", help="launch + supervise a headless Virtuoso")
+    ds.add_argument("--boot", default=None,
+                    help="boot .il (default: skill/vfp_daemon_boot.il)")
+    ds.add_argument("--cwd", default=None,
+                    help="launch dir (cds.lib location; default: current dir)")
+    ds.add_argument("--timeout", type=float, default=200.0)
+    ds.set_defaults(func=cmd_daemon_start)
+    dsub.add_parser("status", help="show daemon status").set_defaults(
+        func=cmd_daemon_status)
+    dsub.add_parser("stop", help="stop the daemon").set_defaults(
+        func=cmd_daemon_stop)
 
     session = groups.add_parser("session", help="inspect sessions")
     ssub = session.add_subparsers(dest="cmd")

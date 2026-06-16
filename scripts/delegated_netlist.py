@@ -13,10 +13,15 @@ in the user's live session).
 Pluggable backend (NOT vcli-only)
 ---------------------------------
 A backend is any callable ``(lib, cell, view, corner) -> deck_path | None``.
-Select it with ``VFP_DELEGATED_BACKEND`` (default ``vcli``):
+Select it with ``VFP_DELEGATED_BACKEND`` (default ``plugin`` -- VFP's own
+channel; demote to ``vcli`` only if you have no connected plugin/daemon):
 
-  vcli              drive a persistent headless Virtuoso over vcli (default),
-                    loading vfp_netlist.il and calling vfpNetlistCellView.
+  plugin            netlist over VFP's OWN tunnel<->plugin channel (default): a
+                    connected plugin -- a VFP-managed headless Virtuoso (`vfp
+                    daemon start`) or a live GUI session -- assembles the deck.
+                    No external netlister.
+  vcli              drive a persistent headless Virtuoso over vcli, loading
+                    vfp_netlist.il and calling vfpNetlistCellView.
   command           run a server-configured command (VFP_DELEGATED_NETLIST_CMD,
                     JSON array or shlex string) with the cellview in the env —
                     for any non-vcli netlister (headless OCEAN, a site script).
@@ -200,9 +205,9 @@ _BUILTIN_BACKENDS = {"vcli": vcli_backend, "command": command_backend,
 
 
 def resolve_backend(name=None):
-    """Pick a netlist backend by name (default VFP_DELEGATED_BACKEND or 'vcli').
+    """Pick a netlist backend by name (default VFP_DELEGATED_BACKEND or 'plugin').
     A built-in name, or 'module:callable' for a custom extension."""
-    name = name or os.environ.get("VFP_DELEGATED_BACKEND", "vcli")
+    name = name or os.environ.get("VFP_DELEGATED_BACKEND", "plugin")
     if name in _BUILTIN_BACKENDS:
         return _BUILTIN_BACKENDS[name]
     if ":" in name:

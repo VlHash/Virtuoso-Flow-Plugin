@@ -22,11 +22,17 @@ restart, stop.
 Pure stdlib, Python 3.6+. The launch command is server-configured only (like
 VFP_SIM_CMD / VFP_NETLIST_CMD), never taken from an RPC client.
 """
+import argparse
+import json
+import os
+import signal
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
 
+from ..config import ensure_dirs, vfp_home
 from ..config import virtuoso_cmd as _cfg_virtuoso_cmd
 
 # Headless Virtuoso evaluates SKILL from the CIW stdin; the default is the
@@ -232,3 +238,91 @@ class VirtuosoDaemon:
         finally:
             self.stop()
         return restarts
+
+
+# ---- supervisor entry (the `vfp daemon` CLI spawns this detached) ---------
+
+def state_file():
+    """Where the supervisor records its pid + readiness for the CLI to poll."""
+    return vfp_home() / "virtuoso_daemon.json"
+
+
+def read_state():
+    try:
+        return json.loads(state_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _write_state(d):
+    try:
+        state_file().write_text(json.dumps(d, indent=2), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _unlink_state():
+    try:
+        state_file().unlink()
+    except OSError:
+        pass
+
+
+def serve_main(argv=None):
+    """Foreground supervisor: launch + keep a headless Virtuoso up, recording a
+    state file (vfp_home/virtuoso_daemon.json) the CLI polls for readiness and
+    uses to stop/inspect it. `vfp daemon start` spawns this detached.
+
+    The Cadence env (PATH, CDS_LIC_FILE, ...) comes from the caller's
+    environment, as for any Cadence tool; --cwd should be the cds.lib dir."""
+    ap = argparse.ArgumentParser(
+        prog="vfp-virtuoso-daemon",
+        description="VFP-managed headless Virtuoso supervisor")
+    ap.add_argument("--boot", help="boot .il (default: skill/vfp_daemon_boot.il)")
+    ap.add_argument("--cwd", help="launch dir (where the cds.lib lives)")
+    ap.add_argument("--ready-timeout", type=float, default=180.0)
+    a = ap.parse_args(argv)
+
+    ensure_dirs()
+    d = VirtuosoDaemon(boot=a.boot or None, cwd=a.cwd or None,
+                       ready_timeout_s=a.ready_timeout)
+    started = time.time()
+
+    def _state(status, ready=None):
+        _write_state({"supervisor_pid": os.getpid(), "status": status,
+                      "ready": bool(ready), "virtuoso_pid": d.status().get("pid"),
+                      "boot": d.boot, "cwd": d.cwd, "started_at": started})
+
+    def _term(signum, frame):
+        raise KeyboardInterrupt
+    try:
+        signal.signal(signal.SIGTERM, _term)
+    except (ValueError, OSError):  # not the main thread, or unsupported
+        pass
+
+    _state("starting")
+    ready = d.ensure_up(wait=True)
+    _state("ready" if ready else "failed", ready)
+    if not ready:
+        for ln in d.tail(40):
+            sys.stderr.write(ln + "\n")
+        d.stop()
+        _unlink_state()
+        return 3
+    try:
+        while True:
+            if not d.is_alive():
+                d.start()
+                d.wait_ready()
+                _state("ready", True)
+            time.sleep(2.0)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        d.stop()
+        _unlink_state()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(serve_main())
