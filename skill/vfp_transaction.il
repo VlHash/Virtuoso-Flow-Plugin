@@ -50,7 +50,14 @@ defun( vfpCreateTransaction (proposalId lib cell beforeArr afterArr
     when( connJ txn = append(txn list("connectivity" connJ)) )
     when( ckptView txn = append(txn list("checkpoint"
             vfpJObj("view" ckptView "created_at" vfpIsoTime()))) )
-    json = vfpToJson( vfpJObj("transaction" txn) )
+    ;; Audit (collab TS audit): carry the M8 session_id + a coarse actor at the
+    ;; params level so the tunnel binds session / session_fingerprint / actor onto
+    ;; the transaction (mirrors the job session_id pass-through in vfp_sim.il).
+    ;; actor defaults to "user"; an agent harness can vfpStateSet('actor "agent").
+    json = vfpToJson( vfpJObj(
+      "session_id"  or(vfpStateGet('sessionId) "")
+      "actor"       or(vfpStateGet('actor) "user")
+      "transaction" txn) )
     pf = sprintf(nil "%s/txn_%d.json" vfpHelperOutDir() vfpRpcSeq())
     if( null(vfpWriteFile(pf json))
       then
