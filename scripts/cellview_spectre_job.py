@@ -303,6 +303,23 @@ def split_metrics(raw):
 
 # ---- provenance ------------------------------------------------------
 
+def _saved_at(deck_path):
+    """Cellview last-saved time for provenance. VFP_JOB_SAVED_AT (set by the
+    runner from an attended vfpRunSimJob) is authoritative; for the DELEGATED
+    path -- where no vfpRunSimJob computed it -- fall back to the saved_at.txt
+    sidecar the netlister (vfpNetlistCellView) writes next to the deck. None if
+    neither is present."""
+    env = os.environ.get("VFP_JOB_SAVED_AT")
+    if env:
+        return env
+    try:
+        with open(os.path.join(os.path.dirname(deck_path), "saved_at.txt"),
+                  encoding="utf-8") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
 def provenance(job, deck_path, mode):
     """What this result actually came from. netlist_hash digests the exact deck
     fed to spectre; cellview closes the content-only-fingerprint gap (identical
@@ -317,9 +334,9 @@ def provenance(job, deck_path, mode):
         "netlist_hash": netlist_hash,
         "source_mode": mode,                       # "si" | "reuse"
         "cellview": {"lib": job["lib"], "cell": job["cell"], "view": job["view"]},
-        # authoritative saved_at comes from SKILL (M10c, ddGetObjLastModify),
-        # carried via env when that plumbing lands; null until then.
-        "saved_at": os.environ.get("VFP_JOB_SAVED_AT") or None,
+        # saved_at (cellview last-saved, ddGetObjLastModify) comes from SKILL:
+        # the runner env (attended) or the netlister's sidecar (delegated).
+        "saved_at": _saved_at(deck_path),
         "fingerprint": job["fingerprint"],
     }
 

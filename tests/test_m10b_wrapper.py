@@ -107,6 +107,31 @@ def test_provenance_saved_at_from_env(tmp_path, monkeypatch):
     assert cj.provenance(job, str(deck), "reuse")["saved_at"] is None
 
 
+def test_provenance_saved_at_from_sidecar(tmp_path, monkeypatch):
+    # delegated path: no VFP_JOB_SAVED_AT, but the netlister wrote a saved_at.txt
+    # sidecar next to the deck (vfpWriteSavedAtSidecar) -> the wrapper picks it up.
+    deckdir = tmp_path / "netlist"
+    deckdir.mkdir()
+    deck = deckdir / "input.scs"
+    deck.write_text("simulator lang=spectre\n", encoding="utf-8")
+    (deckdir / "saved_at.txt").write_text("Oct 13 08:30:26 2025\n", encoding="utf-8")
+    monkeypatch.delenv("VFP_JOB_SAVED_AT", raising=False)
+    job = {"lib": "L", "cell": "C", "view": "schematic", "fingerprint": "fp"}
+    assert cj.provenance(job, str(deck), "reuse")["saved_at"] == "Oct 13 08:30:26 2025"
+
+
+def test_provenance_saved_at_env_beats_sidecar(tmp_path, monkeypatch):
+    # env (attended) wins over the sidecar when both are present
+    deckdir = tmp_path / "netlist"
+    deckdir.mkdir()
+    deck = deckdir / "input.scs"
+    deck.write_text("x\n", encoding="utf-8")
+    (deckdir / "saved_at.txt").write_text("SIDECAR\n", encoding="utf-8")
+    monkeypatch.setenv("VFP_JOB_SAVED_AT", "ENV")
+    job = {"lib": "L", "cell": "C", "view": "v", "fingerprint": "fp"}
+    assert cj.provenance(job, str(deck), "reuse")["saved_at"] == "ENV"
+
+
 def test_read_job_env_first_then_jobjson(tmp_path, monkeypatch):
     # env carries lib/test; job.json fills the rest (cell/view)
     (tmp_path / "job.json").write_text(json.dumps({
