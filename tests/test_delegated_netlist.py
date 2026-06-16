@@ -69,6 +69,8 @@ def test_resolve_backend_plugin(monkeypatch):
 def test_plugin_backend_done(monkeypatch):
     # netlist over VFP's own channel: request -> poll netlist.get -> deck.
     def fake(method, params=None, timeout=30):
+        if method == "tunnel.status":
+            return {"sessions": 1}
         if method == "netlist.request":
             return {"request_id": "nlr_1", "status": "pending"}
         return {"request": {"status": "done", "deck": "/d/input.scs"}}
@@ -78,11 +80,25 @@ def test_plugin_backend_done(monkeypatch):
 
 def test_plugin_backend_failed(monkeypatch):
     def fake(method, params=None, timeout=30):
+        if method == "tunnel.status":
+            return {"sessions": 1}
         if method == "netlist.request":
             return {"request_id": "nlr_1"}
         return {"request": {"status": "failed", "error": "no maestro"}}
     monkeypatch.setattr(dn, "_tunnel_call", fake)
     assert dn.plugin_backend("L", "C", "v") is None
+
+
+def test_plugin_backend_fast_fails_with_no_connected_plugin(monkeypatch):
+    # zero sessions -> don't even request; return None fast (no 120s poll).
+    calls = []
+
+    def fake(method, params=None, timeout=30):
+        calls.append(method)
+        return {"sessions": 0}
+    monkeypatch.setattr(dn, "_tunnel_call", fake)
+    assert dn.plugin_backend("L", "C", "v") is None
+    assert calls == ["tunnel.status"]   # never issued netlist.request
 
 
 def test_command_backend_runs_and_returns_last_line(monkeypatch):

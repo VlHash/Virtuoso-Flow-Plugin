@@ -168,10 +168,33 @@ def _tunnel_call(method, params=None, timeout=30):
     return resp.get("result") or {}
 
 
+def _connected_plugins():
+    """Number of sessions registered with the tunnel -- a connected plugin (the
+    VFP daemon or a live GUI) that could service a netlist request. 0 means
+    there is no point requesting; -1 means the tunnel is unreachable (let the
+    request itself surface that)."""
+    try:
+        n = _tunnel_call("tunnel.status").get("sessions")
+    except (OSError, ValueError, RuntimeError):
+        return -1
+    if isinstance(n, list):
+        return len(n)
+    try:
+        return int(n)
+    except (TypeError, ValueError):
+        return 0
+
+
 def plugin_backend(lib, cell, view, corner="Nominal"):
     """Netlist over VFP's OWN channel: ask the tunnel to request a netlist from a
     connected plugin (which assembles it via vfpNetlistCellView), then poll for
     the deck. No external netlister."""
+    if _connected_plugins() == 0:
+        sys.stderr.write(
+            "delegated_netlist[plugin]: no connected plugin to service the "
+            "netlist -- start one with `vfp daemon start` (or connect a live "
+            "Virtuoso session), or use VFP_DELEGATED_BACKEND=vcli/command\n")
+        return None
     cv = {"lib": lib, "cell": cell, "view": view}
     try:
         rid = _tunnel_call("netlist.request",
