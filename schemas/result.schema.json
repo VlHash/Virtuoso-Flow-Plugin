@@ -37,7 +37,17 @@
         "cellview": { "$ref": "#/$defs/cellview" },
         "saved_at": { "type": ["string", "null"], "description": "Cellview last-saved time (ddGetObjLastModify); null until plumbed." },
         "fingerprint": { "type": "string", "description": "Inputs fingerprint the result was keyed on." },
-        "session": { "type": "string", "description": "Originating Virtuoso session (resolved from session_id)." }
+        "session": { "type": "string", "description": "Originating Virtuoso session_id (M8 handle)." },
+        "session_fingerprint": {
+          "type": "object",
+          "description": "Durable identity of the producing Virtuoso, snapshotted at job.create (survives session reaping).",
+          "properties": {
+            "virtuoso_pid": { "type": "string" },
+            "virtuoso_start": { "type": "string" },
+            "display": { "type": "string" },
+            "cds_lib": { "type": "string" }
+          }
+        }
       }
     },
     "metric_quality": {

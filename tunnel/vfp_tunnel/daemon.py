@@ -499,6 +499,17 @@ class Tunnel:
         return {"run": run, "result": result}
 
     # ---- simulation job RPC methods ----
+    def _session_fingerprint(self, sid):
+        """Snapshot a session_id's durable Virtuoso fingerprint from the M8
+        registry (pid/start/display/cds_lib), or None if unknown."""
+        if not sid:
+            return None
+        client = (self.registry.get(sid) or {}).get("client") or {}
+        fp = {k: client[k] for k in
+              ("virtuoso_pid", "virtuoso_start", "display", "cds_lib")
+              if client.get(k)}
+        return fp or None
+
     def _m_job_create(self, params):
         data = params.get("job")
         if not isinstance(data, dict):
@@ -510,6 +521,11 @@ class Tunnel:
             data = dict(data)
             data["session"] = sid
             self.registry.touch(sid)
+            # Snapshot the fingerprint now, while the session is live, so the
+            # provenance survives later reaping (the raw id alone does not).
+            fp = self._session_fingerprint(sid)
+            if fp:
+                data["session_fingerprint"] = fp
         candidate = make_job(data)
         # Freshness guard: reuse a done job with the same inputs unless the
         # caller opts out with reuse=false.

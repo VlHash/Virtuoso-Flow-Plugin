@@ -26,6 +26,10 @@
       "type": "string",
       "description": "Originating Virtuoso session_id (M8), bound at job.create; flows to result provenance.session."
     },
+    "session_fingerprint": {
+      "type": "object",
+      "description": "Producing Virtuoso fingerprint, snapshotted from the live session at job.create; flows to result provenance.session_fingerprint."
+    },
     "result_id": { "type": "string", "description": "set when status=done" },
     "run_id": { "type": "string", "description": "linked artifact run, if any" },
     "error": { "type": "string", "description": "set when status=failed" },
