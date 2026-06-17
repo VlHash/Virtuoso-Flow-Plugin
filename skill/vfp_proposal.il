@@ -93,8 +93,11 @@ defun( vfpShowProposal (proposal)
         sprintf(nil "  %s.%s: %s -> %s\n"
           vfpAlistGet(ch "instance")
           vfpAlistGet(ch "param")
-          vfpAlistGet(ch "before")
-          vfpAlistGet(ch "after")
+          ;; "before" is schema-optional (and may be a number) -> stringify
+          ;; safely with a fallback, so a proposal without it doesn't crash the
+          ;; review render with a "%s argument is nil" sprintf error.
+          vfpToStr( or(vfpAlistGet(ch "before") "(current)") )
+          vfpToStr( vfpAlistGet(ch "after") )
         )
       )
     )

@@ -117,7 +117,10 @@ defun( vfpSimPreflightJson (cv @optional (test ""))
 ;; "done" (a fresh create returns "queued", which we then job.run). Refuses
 ;; a dirty cellview so we never sim a stale netlist. Returns (job_id reused)
 ;; or nil.
-defun( vfpRunSimJob (cv @optional (test "tran") @key (attended nil) (corner "Nominal"))
+;; NOTE: all keyword args (no @optional) — mixing @optional + @key fails to
+;; parse under some IC23.1 readers (e.g. with the RAMIC/vcli bridge loaded),
+;; which aborts the whole vfpLoad. Callers use vfpRunSimJob(cv ?test "tran").
+defun( vfpRunSimJob (cv @key (test "tran") (attended nil) (corner "Nominal"))
   prog( (pf sid jjson pfile res ok payload job jid jstatus rr)
     unless( cv
       vfpError("vfpRunSimJob: no cellview")
