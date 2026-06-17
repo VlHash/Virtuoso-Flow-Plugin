@@ -60,6 +60,8 @@ result → constraints) is done. The problem-driven **M8+** plan:
 | **M9** | Sim job model + freshness guard + runner (tunnel); netlist **dirty-check** + inputs **fingerprint** + real-spectre closed loop (plugin) | done |
 | **M10** | Cellview-specific real-spectre + provenance/metric_quality: `session_id` in jobs (M10a); cellview wrapper + **attended in-session netlist** via `maeCreateNetlistForCorner`, reusing the live session's license (M10b, plugin); M10c saved_at; result schema 0.2 = provenance + metric_quality + session (tunnel F.1–F.3) | done — live on Project/inv_tb |
 | **M11** | Connectivity snapshot/diff, txn connectivity audit, auto-net risk + `vfpPinNetLabel`, TB lint + pre-apply checkpoint, **parameter blame chain + batch apply + rollback picker** | done |
+| **Daemon** | **Delegated netlist + VFP Daemon**: a pluggable delegated backend (`plugin` / vcli / command / `module:callable`), netlisting over VFP's own tunnel↔plugin channel, and a VFP-managed headless `virtuoso -nograph` (`vfp daemon` start/status/stop) so delegated netlisting runs unattended — no GUI, no vcli. `plugin` is the default backend; delegated provenance `saved_at` rides a deck-dir sidecar | done — live on Project/inv_tb |
+| **Txn audit** | `created_ts` (precise blame ordering) + `actor` / `session` / `session_fingerprint` bound at apply, closing the two known-debt items below | done |
 | **M12** | Approval envelope + experiment ledger | planned (collab-led) |
 | **M13** | Transport hardening (errors / UTF-8), deck patch, `doctor --fix` | M13a done; b/c planned |
 
@@ -73,9 +75,14 @@ automated AI attribution in messages or PRs.
 
 ## Known debt
 
-- **Transaction actor/author**: a transaction records *what* changed and
-  *when*, but not *who* applied or rolled it back, nor in which Virtuoso
-  session. The M8 session id could be bound into the txn to close this.
-- **Sub-second blame ordering**: transaction timestamps are second-granular;
-  a `created_ts` epoch on the txn would let the parameter blame chain order
-  bursts of edits precisely.
+- ~~Transaction actor/author~~ and ~~sub-second blame ordering~~ — **closed**.
+  A transaction now records `created_ts` (epoch, so the blame chain orders
+  same-second bursts precisely) and binds `actor` + the originating `session`
+  / `session_fingerprint` at apply time — tunnel side (collab) + plugin side
+  (`vfpCreateTransaction` sends `session_id` + `actor`).
+- **Rollback actor** (remaining): "who *rolled back*" is still not captured —
+  the daemon binds the audit on `transaction.create` only. Needs a daemon-side
+  bind on rollback + the plugin sending `session_id` there.
+- **Apply → audited-txn VNC pass** (remaining): the plugin-side audit params
+  are verified, but the full GUI apply flow populating an audited transaction
+  still owes a live VNC pass.
