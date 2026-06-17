@@ -35,6 +35,10 @@
       }
     },
     "ade": { "$ref": "#/$defs/ade" },
+    "layout": {
+      "$ref": "#/$defs/layout",
+      "description": "Read-only layout snapshot (L1) from vfpLayoutReadSummary / vfpLayoutReadGeometry: placement, layer/shape counts, and via count. Routed nets are deferred to L3. Absent for schematic-only contexts."
+    },
     "last_result": {
       "type": "object",
       "properties": { "available": { "type": "boolean" } }
@@ -113,6 +117,51 @@
         "available": { "type": "boolean" },
         "active_test": { "type": ["string", "null"] },
         "tests": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "point": {
+      "type": "array",
+      "description": "A coordinate [x, y] in user units (see layout.units).",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "bbox": {
+      "type": "array",
+      "description": "Bounding box as [[x0, y0], [x1, y1]] (lower-left, upper-right), mirroring Cadence bBox.",
+      "items": { "$ref": "#/$defs/point" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "layout": {
+      "type": "object",
+      "properties": {
+        "cellview": { "$ref": "#/$defs/cellview" },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "units": { "type": "string", "description": "Coordinate units for all points and bboxes, e.g. \"um\"." },
+        "instances": { "type": "array", "items": { "$ref": "#/$defs/layout_instance" } },
+        "layers": { "type": "array", "items": { "$ref": "#/$defs/layout_layer" } },
+        "vias": { "type": "integer", "description": "Total via count (cv~>vias). Per-via position/type is deferred to L3." }
+      }
+    },
+    "layout_instance": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "master": { "type": "string", "description": "Master as \"lib/cell/view\", matching the connectivity-snapshot convention." },
+        "origin": { "$ref": "#/$defs/point" },
+        "orient": { "type": "string", "description": "Placement orientation, e.g. R0, R90, MX, MY." },
+        "bbox": { "$ref": "#/$defs/bbox" }
+      }
+    },
+    "layout_layer": {
+      "type": "object",
+      "required": ["layer"],
+      "properties": {
+        "layer": { "type": "string", "description": "Layer name, e.g. M1, M2, POLY." },
+        "purpose": { "type": "string", "description": "LPP purpose, e.g. drawing, pin." },
+        "shapes": { "type": "integer", "description": "Drawn-shape count on this layer-purpose." }
       }
     }
   }

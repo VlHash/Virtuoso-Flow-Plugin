@@ -330,7 +330,10 @@ machinery. Phased by value vs. risk:
   / `layout_read_geometry` → a layout block in the context payload: instance
   placement (bbox), layer usage, shape/via counts, routed nets. Lets the
   agent see the layout; reuses the context schema + store. The recommended
-  starting point.
+  starting point. *Tunnel half landed:* the optional `layout` block is in
+  `context.schema.json` (validated, stored, and surfaced through
+  `design.context.get` / the MCP `context_get` tool). Pending (owner): the
+  `vfpLayoutReadSummary` / `vfpLayoutReadGeometry` SKILL readers that fill it.
 - **L2 — Layout geometry lint** (read-only analysis). Floating metal (shapes
   on no net), unconnected device pins, off-grid shapes — geometry-based, not
   a full DRC sign-off. The layout analogue of the testbench lint.

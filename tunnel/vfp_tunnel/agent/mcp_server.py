@@ -17,8 +17,9 @@ def tunnel_status() -> dict:
 @mcp.tool()
 def context_get() -> Optional[dict]:
     """Get the latest exported design context (current lib/cell/view plus the
-    schematic's instances, parameters, and nets). Returns null if no context
-    has been exported from Virtuoso yet."""
+    schematic's instances, parameters, and nets, and an optional layout block
+    with placement, layer/shape counts, and via count). Returns null if no
+    context has been exported from Virtuoso yet."""
     return tools.context_get()
 
 
