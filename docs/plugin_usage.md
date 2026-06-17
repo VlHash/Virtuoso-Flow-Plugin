@@ -108,6 +108,32 @@ the same value for the plugin and the runner. `vfpNetlistCellView(cv ?corner
 "Nominal")` can also be called on its own to assemble a deck and return its
 path.
 
+### Delegated (unattended) netlist — the VFP Daemon
+
+For batch / agent runs with no live GUI, the **delegated** path assembles the
+deck without your session. `scripts/delegated_netlist.py` drives a pluggable
+backend (`VFP_DELEGATED_BACKEND`, default `plugin`):
+
+- `plugin` — netlist over VFP's own tunnel↔plugin channel: a connected plugin
+  (a VFP-managed headless Virtuoso, or a live GUI session) assembles the deck.
+- `vcli` / `command` / `module:callable` — a vcli-driven Virtuoso, any server
+  netlister (`VFP_DELEGATED_NETLIST_CMD`), or a custom Python callable.
+
+To run it fully unattended, let VFP manage its own headless Virtuoso:
+
+```bash
+vfp daemon start          # launch + supervise a headless virtuoso -nograph
+vfp daemon status
+vfp daemon stop
+```
+
+Run `vfp daemon start` from a Cadence-sourced shell at the cds.lib directory;
+the daemon boots the plugin, connects to the tunnel, and services netlist
+requests headless. The deck (and a `saved_at.txt` sidecar for provenance) lands
+at the same `<VFP_NETLIST_DIR>/<lib>__<cell>__<view>/netlist/` convention path
+the wrapper reads. A clean working dir (an empty `.cdsinit`) keeps a site
+vcli/RAMIC bridge from loading into the daemon's Virtuoso.
+
 ## Auto-refresh (event bridge)
 
 After **Connect**, the plugin starts `scripts/vfp_event_client.py` as a
@@ -132,11 +158,12 @@ to drop dead ones.
 
 ## Status
 
-Milestones 1–8, 11 (parts 1–2), and 13a are implemented and covered by
-the test suite. The proposal apply → rollback flow (with connectivity
-audit), the result/constraint dashboard, and the M8 session
-fingerprint / heartbeat / reap path have been verified live in Virtuoso
-IC23.1. See
+Milestones 1–11 and 13a are implemented and covered by the test suite, plus
+the **delegated netlist + VFP Daemon** and the **transaction audit**. The
+proposal apply → rollback flow (with connectivity audit), the result/constraint
+dashboard, the M8 session fingerprint / heartbeat / reap path, the M9/M10
+real-spectre closed loop + attended netlist, and the VFP Daemon's delegated
+netlist have been verified live in Virtuoso IC23.1 (on Project/inv_tb). See
 [`development_notes.md`](development_notes.md) for the roadmap and the
 proposal/transaction lifecycle.
 

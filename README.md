@@ -74,7 +74,8 @@ Full read-guide: [docs/architecture.md](docs/architecture.md).
 
 ## Current Status
 
-Milestones 1–11 and 13a are implemented.
+Milestones 1–11 and 13a are implemented, plus the delegated netlist + VFP
+Daemon and the transaction audit.
 
 <div align="center">
 
@@ -92,6 +93,8 @@ Milestones 1–11 and 13a are implemented.
 | Cellview-specific real-spectre + attended netlist, result provenance (M10) | Done |
 | Connectivity snapshot/diff, txn audit, auto-net risk, TB lint, blame chain (M11) | Parts 1–5 |
 | Transport hardening: error taxonomy + UTF-8 audit (M13a) | Done |
+| Delegated netlist + VFP Daemon: pluggable backend, netlist over own channel, managed headless Virtuoso | Done |
+| Transaction audit: created_ts + actor / session / fingerprint at apply | Done |
 
 </div>
 

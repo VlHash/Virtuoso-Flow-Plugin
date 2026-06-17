@@ -32,6 +32,8 @@ dependency.
 | 9 | Sim job model + freshness guard + runner; netlist dirty-check + inputs fingerprint; real-spectre closed loop | **done** |
 | 10 | Cellview-specific real-spectre wrapper + attended in-session netlist; result schema 0.2 (provenance + metric_quality + session) | **done** |
 | 11 | Connectivity snapshot/diff, txn connectivity audit, auto-net risk + pin, TB lint + pre-apply checkpoint, parameter blame chain + batch apply + rollback picker | parts 1–5 **done** |
+| — | **Delegated netlist + VFP Daemon**: pluggable delegated backend (`plugin`/vcli/command/callable), netlist over VFP's own tunnel↔plugin channel, VFP-managed headless `virtuoso -nograph` (`vfp daemon`), `plugin` default backend, delegated `saved_at` via a deck-dir sidecar | **done** |
+| — | **Transaction audit**: `created_ts` (precise blame ordering) + `actor` / `session` / `session_fingerprint` bound at apply | **done** |
 | 13a | Transport hardening: error taxonomy + UTF-8 audit | **done** |
 
 Milestones verified live in Virtuoso IC23.1: M8 reconnect/heartbeat/reap
@@ -40,7 +42,9 @@ Milestones verified live in Virtuoso IC23.1: M8 reconnect/heartbeat/reap
 netlist on Project/inv_tb (2026-06-15). M10 is complete: M10a (session_id),
 M10b (cellview wrapper + attended netlist), M10c (saved_at) on the plugin side,
 and the tunnel half F.1–F.3 (runner cellview pass-through, result schema 0.2
-with provenance + metric_quality, session resolution). M12 (approval envelope +
+with provenance + metric_quality, session resolution). Since M10, the
+**delegated netlist + VFP Daemon** and the **transaction audit** (both below)
+shipped — both live-verified on Project/inv_tb. M12 (approval envelope +
 experiment ledger) is collab-led and not yet started. The **layout side**
 (below) is planned but not started.
 
@@ -230,6 +234,44 @@ Interface point for the tunnel side: emit an event when
 `transaction.create` arrives with `connectivity.status=changed`
 (roadmap "Task Marked / Task Push"). The plugin already records
 everything that piece needs.
+
+## VFP Daemon — delegated netlist (Phase 1/2) + transaction audit
+
+Two follow-ons after M10/M11, both live on Project/inv_tb.
+
+**Delegated netlist + the VFP Daemon.** M10b's *attended* netlist reuses the
+user's live session; the *delegated* path netlists without a GUI:
+
+- `skill/vfp_netlist.il` — the netlist assembler (`vfpNetlistCellView` →
+  `maeCreateNetlistForCorner`), split out of `vfp_sim.il` so it loads cleanly
+  on its own (e.g. under a vcli reader). It also writes a `saved_at.txt`
+  sidecar next to the deck, so the wrapper can stamp `provenance.saved_at` on
+  the delegated path (where no `vfpRunSimJob` computed it; the env value still
+  wins for attended jobs).
+- `scripts/delegated_netlist.py` — a **pluggable backend** worker:
+  `VFP_DELEGATED_BACKEND` selects `plugin` (default) / `vcli` / `command` /
+  `module:callable`. The `plugin` backend netlists over VFP's **own**
+  tunnel↔plugin channel: it posts a `netlist.request`, a connected plugin
+  services it (`vfpServiceNetlistRequests` → `vfpNetlistCellView` →
+  `netlist.complete`), and the worker polls `netlist.get` for the deck. No
+  external netlister; it fast-fails with a clear message if no plugin is
+  connected.
+- **VFP Daemon** (`tunnel/vfp_tunnel/sim/virtuoso_daemon.py`, `vfp daemon`
+  CLI) — a VFP-managed, supervised headless `virtuoso -nograph` that boots the
+  plugin (`skill/vfp_daemon_boot.il`: minimal module load → `vfpConnect` →
+  poll-service `netlist.request`), so the `plugin` backend runs **unattended**.
+  `vfp daemon start|status|stop` spawns a detached supervisor + a state file.
+  Launch it from a Cadence-sourced shell at the cds.lib dir; a clean working
+  dir (empty `.cdsinit`) avoids pulling in a site vcli/RAMIC bridge.
+
+**Transaction audit.** Closes the M11 blame-chain known debt: a transaction now
+carries `created_ts` (epoch — orders same-second edits precisely) and binds
+`actor` + the originating `session` / `session_fingerprint` at apply. Tunnel
+side (collab): `transaction.create` resolves `params.session_id` to the durable
+M8 fingerprint and stores `actor`; `manager.list` orders by `(created_ts,
+timestamp)`. Plugin side: `vfpCreateTransaction` sends `session_id` + `actor`
+(default `"user"`; an agent can set the `'actor` state to `"agent"`).
+Remaining: rollback-actor + a full GUI apply→audited-txn VNC pass.
 
 ## Milestone 13a — error taxonomy + UTF-8 audit
 
