@@ -157,7 +157,7 @@ defun( vfpMenuRunSimCB ()
     then
       let( (cv r)
         cv = vfpGetCurrentCellView()
-        r  = and(cv vfpRunSimJob(cv "tran"))
+        r  = and(cv vfpRunSimJob(cv ?test "tran"))
         hiDisplayAppDBox(?name 'vfpInfoDBox ?dboxBanner "Virtuoso Flow"
           ?dboxText if(r
             sprintf(nil "Sim job %s %s." car(r)
