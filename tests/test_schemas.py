@@ -128,6 +128,52 @@ def test_context_with_sim_preflight_conforms():
     assert vfp_schemas.validate("context", ctx) is True
 
 
+def test_context_with_layout_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    ctx = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "layout": {
+            "cellview": {"lib": "L", "cell": "C", "view": "layout"},
+            "bbox": [[0, 0], [12.5, 8.0]],
+            "units": "um",
+            "instances": [
+                {"name": "M1", "master": "tsmcN65/nmos/layout",
+                 "origin": [1.0, 1.0], "orient": "R0",
+                 "bbox": [[1.0, 1.0], [2.0, 1.6]]}
+            ],
+            "layers": [{"layer": "M1", "purpose": "drawing", "shapes": 42}],
+            "vias": 31,
+        },
+    }
+    assert vfp_schemas.validate("context", ctx) is True
+
+
+def test_context_bad_layout_bbox_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "layout": {"bbox": [[0, 0]]},  # bbox must be two points (LL, UR)
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("context", bad)
+
+
+def test_context_bad_layout_layer_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "schematic"},
+        "layout": {"layers": [{"purpose": "drawing"}]},  # missing required "layer"
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("context", bad)
+
+
 def test_transaction_with_checkpoint_conforms():
     pytest.importorskip("jsonschema")
     from vfp_tunnel.rpc import schemas as vfp_schemas

@@ -75,6 +75,23 @@ def test_context_update_get_roundtrip(running_tunnel):
     assert got["instances"][0]["params"]["w"] == "1u"
 
 
+def test_context_with_layout_roundtrips(running_tunnel):
+    from vfp_tunnel.rpc.transport import call
+    host, port = running_tunnel
+    ctx = dict(SAMPLE)
+    ctx["layout"] = {
+        "cellview": {"lib": "RFCOPA", "cell": "XOPA", "view": "layout"},
+        "bbox": [[0, 0], [12.5, 8.0]],
+        "units": "um",
+        "layers": [{"layer": "M1", "purpose": "drawing", "shapes": 42}],
+        "vias": 31,
+    }
+    call("design.context.update", {"context": ctx}, host=host, port=port)
+    got = call("design.context.get", {}, host=host, port=port)["context"]
+    assert got["layout"]["vias"] == 31
+    assert got["layout"]["layers"][0]["layer"] == "M1"
+
+
 def test_context_update_rejects_non_object(running_tunnel):
     from vfp_tunnel.rpc.transport import call
     from vfp_tunnel.rpc.jsonrpc import JsonRpcError, INVALID_PARAMS
