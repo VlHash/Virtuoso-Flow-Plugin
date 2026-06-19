@@ -1,11 +1,13 @@
 ;; =====================================================================
-;; vfp_layout.il — L1: read a layout cellview into a context "layout" block
+;; vfp_layout.il — layout context export (L1) + geometry lint (L2)
 ;; ---------------------------------------------------------------------
-;; The SKILL half of L1 (the tunnel/schema half landed in #63). Read-only:
-;; cell bbox, instance placement, per-layer shape counts, via count. The block
-;; rides design.context.update like the schematic context; the tunnel stores
-;; and validates it (schemas/context.schema.json `layout`) and the agent reads
-;; it (`vfp context show` / the MCP context_get tool).
+;; The SKILL half of the layout phase (the L1 tunnel/schema half landed in #63).
+;; Read-only. L1: cell bbox, instance placement, per-layer shape counts, via
+;; count. L2: a cheap geometry lint (unconnected device pins, net-less metal,
+;; off-grid shapes) riding the layout block as `lint`. The block rides
+;; design.context.update like the schematic context; the tunnel stores and
+;; validates it (schemas/context.schema.json `layout`, loose) and the agent
+;; reads it (`vfp context show` / the MCP context_get tool).
 ;;
 ;; Field conventions per docs/layout_l1_plan.md + #63's schema:
 ;;   bbox   nested [[x0,y0],[x1,y1]] (lower-left, upper-right)
@@ -64,6 +66,66 @@ defun( vfpLayoutLayersJ (cv)
   )
 )
 
+;; ---- L2: layout geometry lint --------------------------------------
+;; Cheap, read-only geometry checks (NOT a DRC sign-off): device pins on no
+;; net, net-less metal (floating), and off-grid shapes. The layout analogue of
+;; the testbench lint (vfpLintTestbench). Each issue is (kind subject detail).
+
+defun( vfpLayoutMetalP (layer)
+  and( layer stringp(layer) rexMatchp("^M[0-9]" layer) )   ;; M1, M2, ...
+)
+
+defun( vfpLayoutOnGridP (coord grid)
+  let( (q)
+    q = quotient(coord grid)
+    lessp( abs(difference(q round(q))) 0.001 ) )
+)
+
+;; Any corner of a shape's bBox off the manufacturing grid?
+defun( vfpLayoutOffGridP (bb grid)
+  and( bb grid greaterp(grid 0.0)
+    let( (ll ur)
+      ll = lowerLeft(bb)  ur = upperRight(bb)
+      not( and( vfpLayoutOnGridP(xCoord(ll) grid) vfpLayoutOnGridP(yCoord(ll) grid)
+                vfpLayoutOnGridP(xCoord(ur) grid) vfpLayoutOnGridP(yCoord(ur) grid) ) ) ) )
+)
+
+;; Lint a layout cv -> list of (kind subject detail).
+defun( vfpLayoutLint (cv)
+  let( (issues grid)
+    issues = nil
+    grid = or( car(errset(techGetMfgGridResolution(techGetTechFile(cv)))) 0.001 )
+    foreach( inst cv~>instances
+      foreach( it inst~>instTerms
+        unless( it~>net
+          issues = cons( list('unconnectedPin
+                              sprintf(nil "%s.%s" inst~>name and(it~>term it~>term~>name))
+                              "device terminal on no net") issues ) ) ) )
+    foreach( sh cv~>shapes
+      ;; geometry only -- skip labels/text (net/pin annotations legitimately
+      ;; carry no net and aren't "floating metal").
+      when( not( or(equal(sh~>objType "label") equal(sh~>objType "text")) )
+        when( and( null(sh~>net) vfpLayoutMetalP(sh~>layerName) )
+          issues = cons( list('floatingMetal sh~>layerName
+                              sprintf(nil "net-less %s on metal %s" sh~>objType sh~>layerName))
+                         issues ) )
+        when( vfpLayoutOffGridP(sh~>bBox grid)
+          issues = cons( list('offGrid sh~>layerName
+                              sprintf(nil "off-grid %s on %s" sh~>objType sh~>layerName))
+                         issues ) ) ) )
+    reverse(issues)
+  )
+)
+
+;; Lint as JSON [{kind, subject, detail}] for the context layout block.
+defun( vfpLayoutLintJ (cv)
+  apply('vfpJArr
+    foreach( mapcar iss vfpLayoutLint(cv)
+      vfpJObj( "kind"    vfpToStr(car(iss))
+               "subject" cadr(iss)
+               "detail"  caddr(iss) ) ) )
+)
+
 ;; ---- readers (names match #63's schema descriptions) ----------------
 
 ;; Common (summary-level) fields, as a flat k/v list for `apply('vfpJObj ...)`.
@@ -87,7 +149,8 @@ defun( vfpLayoutReadSummary (cv)
 defun( vfpLayoutReadGeometry (cv)
   and( cv apply('vfpJObj
                  append( vfpLayoutCommonKV(cv)
-                         list("instances" vfpLayoutInstancesJ(cv)) )) )
+                         list("instances" vfpLayoutInstancesJ(cv)
+                              "lint"      vfpLayoutLintJ(cv)) )) )
 )
 
 ;; ---- open + export --------------------------------------------------
