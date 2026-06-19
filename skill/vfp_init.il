@@ -30,6 +30,7 @@ VFP_MODULES = '(
   "vfp_utils.il"
   "vfp_rpc_client.il"
   "vfp_context.il"
+  "vfp_layout.il"
   "vfp_schematic.il"
   "vfp_connectivity.il"
   "vfp_netlist.il"
