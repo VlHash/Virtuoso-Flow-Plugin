@@ -326,14 +326,15 @@ VFP today is schematic-only. The layout side mirrors the schematic
 architecture and reuses the same proposal / transaction / context
 machinery. Phased by value vs. risk:
 
-- **L1 — Layout context export** (read-only, low risk). `layout_read_summary`
-  / `layout_read_geometry` → a layout block in the context payload: instance
-  placement (bbox), layer usage, shape/via counts, routed nets. Lets the
-  agent see the layout; reuses the context schema + store. The recommended
-  starting point. *Tunnel half landed:* the optional `layout` block is in
-  `context.schema.json` (validated, stored, and surfaced through
-  `design.context.get` / the MCP `context_get` tool). Pending (owner): the
-  `vfpLayoutReadSummary` / `vfpLayoutReadGeometry` SKILL readers that fill it.
+- **L1 — Layout context export** (read-only, low risk). `vfpLayoutReadSummary`
+  / `vfpLayoutReadGeometry` → a `layout` block in the context payload: cell bbox,
+  instance placement (origin/orient/bbox), layer/shape counts, via count.
+  (Routed nets are **deferred to L3**.) Lets the agent see the layout; reuses
+  the context schema + store. **Done:** the optional `layout` block in
+  `context.schema.json` (validated, stored, surfaced through
+  `design.context.get` / the MCP `context_get` tool) + the SKILL readers in
+  `skill/vfp_layout.il` (live-verified on Project/inv layout). See
+  `docs/layout_l1_plan.md`.
 - **L2 — Layout geometry lint** (read-only analysis). Floating metal (shapes
   on no net), unconnected device pins, off-grid shapes — geometry-based, not
   a full DRC sign-off. The layout analogue of the testbench lint.
