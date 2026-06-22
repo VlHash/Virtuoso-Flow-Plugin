@@ -380,9 +380,12 @@ proposal / transaction / context machinery. Phased by value vs. risk:
   `kind` + `geometry` block. **Live-verified** on a scratch copy of a Project
   gate: edit → diff shows the one added shape → rollback restores the exact
   shape count, both standalone and full end-to-end through the live tunnel
-  (a real transaction created and rolled back). **Owed:** the GUI case where
-  the view being restored is open in a layout editor (headless/rollback path is
-  proven). Next: **L5** generic primitive mechanics on top of this.
+  (a real transaction created and rolled back). The **open-editor GUI case** is
+  verified too: `vfpLayoutRestoreFromView` is window-aware (close the editor
+  window → delete the view → copy the checkpoint → reopen), so apply and
+  rollback work with a layout editor open on the cell and the reopened window
+  shows the rolled-back layout. Next: **L5** generic primitive mechanics on top
+  of this.
 - **L5 — Generic layout-primitive mechanics** (planned). PDK-agnostic,
   grid-snapped, transaction-wrapped shape/via/path operations with a uniform
   contract (input schema · pre-check · dry-run · apply · post-check · diff ·

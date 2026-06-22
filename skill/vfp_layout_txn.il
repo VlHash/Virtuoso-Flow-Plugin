@@ -144,14 +144,24 @@ defun( vfpLayoutCheckpoint (cv @optional (tag "preedit"))
   )
 )
 
+;; Open editor windows showing lib/cell/view (CIW and other windows have no
+;; cellView and drop out of the filter).
+defun( vfpLayoutWindowsFor (lib cell view)
+  setof( w hiGetWindowList()
+    and( windowp(w) w~>cellView
+         w~>cellView~>libName  == lib
+         w~>cellView~>cellName == cell
+         w~>cellView~>viewName == view ) )
+)
+
 ;; Restore lib/cell/view from a checkpoint sibling view. dbCopyCellView will
-;; NOT overwrite an existing view (returns nil — verified live), so the working
-;; view is deleted first, then the checkpoint is copied into its place. Used by
-;; rollback and by the apply path when recording fails. NOTE: deleting/replacing
-;; an OPEN editor view is the risky case (owed a GUI VNC pass); a not-open view
-;; (the headless / rollback path) restores cleanly.
+;; NOT overwrite an existing view (returns nil — verified live), and an OPEN
+;; view cannot be deleted, so: close any editor windows on the view, delete it,
+;; copy the checkpoint into its place, then reopen a window if one was open (so
+;; the editor shows the rolled-back layout). Used by rollback and by the apply
+;; path when recording fails.
 defun( vfpLayoutRestoreFromView (lib cell view ckptView)
-  let( (src tgt ok)
+  let( (src tgt ok wins reopen)
     src = car(errset( dbOpenCellViewByType(lib cell ckptView "" "r") ))
     if( null(src)
       then
@@ -159,10 +169,15 @@ defun( vfpLayoutRestoreFromView (lib cell view ckptView)
                          lib cell ckptView))
         nil
       else
+        wins   = vfpLayoutWindowsFor(lib cell view)
+        reopen = and(wins t)
+        foreach( w wins errset( hiCloseWindow(w) ) )
         tgt = ddGetObj(lib cell view)
         when( tgt errset( ddDeleteObj(tgt) ) )
         ok = car(errset( dbCopyCellView(src lib cell view nil nil nil) ))
         errset( dbClose(src) )
+        when( reopen
+          errset( geOpen(?lib lib ?cell cell ?view view ?viewType "maskLayout" ?mode "a") ) )
         if( ok
           then vfpLog(sprintf(nil "restored %s/%s/%s from checkpoint %s"
                               lib cell view ckptView)) t
