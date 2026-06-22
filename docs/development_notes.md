@@ -361,11 +361,28 @@ proposal / transaction / context machinery. Phased by value vs. risk:
   schematic S–B short does not show as a spurious mismatch. Deferred: raw drawn
   layouts (geometry → net), topological device matching, hierarchy. See
   `docs/layout_l3_plan.md`.
-- **L4 — Layout-edit transactions** (read-write, highest risk; **next**).
-  Routing / via / placement edits applied as reversible transactions: a
-  pre-edit checkpoint (the `vfpCheckpointCellView` pattern), shape +
-  connectivity (reuse L3) + marker diff, rollback, and provenance — the layout
-  analogue of the schematic transaction engine. Gated on checks before keep.
+- **L4 — Layout-edit transactions** (read-write, highest risk).
+  **Done (L4a, the transaction framework):** `skill/vfp_layout_txn.il` —
+  `vfpLayoutGeomSnapshot` / `vfpLayoutGeomDiff` (shapes matched by dbId within
+  one session: added/removed/modified, plus instance move/reorient),
+  `vfpLayoutCheckpoint` (a layout-prefixed sibling-view backup),
+  `vfpLayoutTxnApply(cv editFn)` (snapshot + connectivity (L3) → checkpoint →
+  run the edit → re-snapshot → diff → `transaction.create` with a
+  `kind:layout_geom` + `geometry` + `connectivity` + `checkpoint` block), and
+  `vfpLayoutTxnRollback` (restore the cellview from the checkpoint view, then
+  `mark_rolled_back`). Unlike the schematic engine, rollback restores from the
+  checkpoint (geometry is not field-invertible), and the transaction stores
+  only the compact diff (the checkpoint view is the full pre-edit backup). The
+  tunnel needs no change — `before`/`after` are optional, the extra blocks ride
+  the open root schema, permissions skip when there are no param targets, and
+  `transaction.rollback` is a state preflight the SKILL follows with the
+  checkpoint restore. Schema: `transaction.schema.json` gains an optional
+  `kind` + `geometry` block. **Live-verified** on a scratch copy of a Project
+  gate: edit → diff shows the one added shape → rollback restores the exact
+  shape count, both standalone and full end-to-end through the live tunnel
+  (a real transaction created and rolled back). **Owed:** the GUI case where
+  the view being restored is open in a layout editor (headless/rollback path is
+  proven). Next: **L5** generic primitive mechanics on top of this.
 - **L5 — Generic layout-primitive mechanics** (planned). PDK-agnostic,
   grid-snapped, transaction-wrapped shape/via/path operations with a uniform
   contract (input schema · pre-check · dry-run · apply · post-check · diff ·

@@ -282,3 +282,54 @@ def test_rpc_unknown_id_raises(running_tunnel):
     with pytest.raises(JsonRpcError):
         call("transaction.get", {"transaction_id": "t_nope"},
              host=host, port=port)
+
+
+# ---- layout (geometry) transaction (L4) -----------------------------
+
+def _layout_txn_params(tid=None):
+    """A layout_geom transaction: no before/after; the diff lives in
+    `geometry` and rollback restores from the `checkpoint` view (in SKILL)."""
+    t = {
+        "schema_version": "0.1",
+        "kind": "layout_geom",
+        "status": "applied",
+        "cellview": {"lib": "Project", "cell": "inv", "view": "layout"},
+        "geometry": {
+            "before_counts": {"shapes": 40, "vias": 6, "instances": 2},
+            "after_counts": {"shapes": 41, "vias": 6, "instances": 2},
+            "changes": [{"kind": "shapeAdded", "subject": "M2",
+                         "detail": "added rect on M2"}],
+        },
+        "checkpoint": {"view": "layout_vfpckpt_edit_x",
+                       "created_at": "2026-06-22T15:00:00"},
+    }
+    if tid:
+        t["transaction_id"] = tid
+    return {"transaction": t}
+
+
+def test_rpc_layout_geom_transaction_roundtrip(running_tunnel):
+    from vfp_tunnel.rpc.transport import call
+    host, port, tun = running_tunnel
+
+    # create: no before/after, a geometry + checkpoint block; permissions
+    # check is skipped because there are no param targets.
+    res = call("transaction.create", _layout_txn_params(tid="t_lay"),
+               host=host, port=port)
+    assert res["transaction"]["kind"] == "layout_geom"
+    assert res["transaction"]["before"] == []   # model defaults empty
+
+    got = call("transaction.get", {"transaction_id": "t_lay"},
+               host=host, port=port)["transaction"]
+    assert got["geometry"]["changes"][0]["kind"] == "shapeAdded"
+    assert got["checkpoint"]["view"].startswith("layout_vfpckpt_")
+
+    # rollback preflight returns an empty restore recipe — the SKILL side
+    # restores from the checkpoint view, not param-by-param.
+    rb = call("transaction.rollback", {"transaction_id": "t_lay"},
+              host=host, port=port)
+    assert rb["restore"] == []
+
+    done = call("transaction.mark_rolled_back", {"transaction_id": "t_lay"},
+                host=host, port=port)
+    assert done["transaction"]["status"] == "rolled_back"
