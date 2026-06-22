@@ -33,7 +33,8 @@ def tunnel_status(host=None, port=None):
 
 def context_get(host=None, port=None):
     """Return the latest exported design context (lib/cell/view, instances,
-    nets, and an optional layout snapshot), or None if nothing has been
+    nets, an optional layout snapshot, and an optional ``lvs`` block —
+    layout<->schematic connectivity consistency), or None if nothing has been
     exported yet."""
     return _call("design.context.get", {}, host, port).get("context")
 

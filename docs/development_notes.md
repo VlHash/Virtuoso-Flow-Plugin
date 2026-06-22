@@ -320,11 +320,10 @@ The Cadence SKILL reference for IC23.1 is bundled under
 `docs/IC231_gui_plugin_docs/` (skuiref = UI, sklangref = language,
 skdfref = design framework, etc.). Prefer it over guessing signatures.
 
-## Layout-side roadmap (planned, not started)
+## Layout-side roadmap (L1–L2 done, L3 landed)
 
-VFP today is schematic-only. The layout side mirrors the schematic
-architecture and reuses the same proposal / transaction / context
-machinery. Phased by value vs. risk:
+The layout side mirrors the schematic architecture and reuses the same
+proposal / transaction / context machinery. Phased by value vs. risk:
 
 - **L1 — Layout context export** (read-only, low risk). `vfpLayoutReadSummary`
   / `vfpLayoutReadGeometry` → a `layout` block in the context payload: cell bbox,
@@ -337,11 +336,30 @@ machinery. Phased by value vs. risk:
   `docs/layout_l1_plan.md`.
 - **L2 — Layout geometry lint** (read-only analysis). Floating metal (shapes
   on no net), unconnected device pins, off-grid shapes — geometry-based, not
-  a full DRC sign-off. The layout analogue of the testbench lint.
-- **L3 — Layout ↔ schematic consistency** (the differentiator). Compare the
-  layout's extracted nets against the schematic connectivity snapshot
-  (`vfpSnapshotConnectivity`) — an LVS-lite the agent can read. Needs layout
-  net extraction (geometry → net); medium complexity.
+  a full DRC sign-off. The layout analogue of the testbench lint. **Done:**
+  `vfpLayoutLint` / `vfpLayoutLintJ` in `skill/vfp_layout.il`, riding the
+  `layout` block as `lint` (live-verified on Project/inv + LDO/LDO).
+- **L3 — Layout ↔ schematic consistency** (the differentiator). An LVS-lite
+  the agent can read — a *connectivity* check, **not** a sign-off LVS/DRC.
+  **Done (first increment):** `vfpLayoutSnapshotConnectivity` +
+  `vfpLayoutVsSchematic` in `skill/vfp_layout.il` emit an `lvs` block (device
+  set diff + per-terminal net-group mismatches). Key insight: most modern
+  layouts are *connectivity-driven* (`instTerm`s already carry nets), so the
+  layout connectivity reads straight through `vfpSnapshotConnectivity` — **no
+  geometry net extraction** for the common case. Nets are matched by
+  membership (names differ between layout and schematic), restricted to the
+  shared inst.term universe (terms present on both sides). Schema: optional
+  top-level `lvs` block in `context.schema.json`. **Live-verified** on the
+  Project standard-cell library — all 8 gate cells (inv/nand/nor/and/or/
+  three_nand/xor/xnor, 2–12 devices) report `clean` with no false positives;
+  a cross-cell negative correctly reports `issues`. Two PDK realities the
+  live pass folded in: schematic **pin** symbols (basic ipin/opin/iopin) are
+  excluded from the device set (they have no layout instance), and **MOS bulk**
+  terminals the layout master omits (substrate tap, not a drawn net) are
+  handled by comparing net-groups over the shared inst.term universe — so a
+  schematic S–B short does not show as a spurious mismatch. Deferred: raw drawn
+  layouts (geometry → net), topological device matching, hierarchy. See
+  `docs/layout_l3_plan.md`.
 - **L4 — Layout-edit transactions** (read-write, highest risk). Agent-
   proposed routing / via / placement edits applied as reversible
   transactions (layout checkpoint + diff), gated on DRC. Last.

@@ -39,6 +39,10 @@
       "$ref": "#/$defs/layout",
       "description": "Read-only layout snapshot (L1) from vfpLayoutReadSummary / vfpLayoutReadGeometry: placement, layer/shape counts, and via count. Routed nets are deferred to L3. Absent for schematic-only contexts."
     },
+    "lvs": {
+      "$ref": "#/$defs/lvs",
+      "description": "Layout<->schematic connectivity consistency (L3, LVS-lite) from vfpLayoutVsSchematic: device-set and per-terminal net-group differences. A connectivity check, NOT a sign-off LVS / DRC. Present only when a cell has both a layout and a schematic."
+    },
     "last_result": {
       "type": "object",
       "properties": { "available": { "type": "boolean" } }
@@ -162,6 +166,40 @@
         "layer": { "type": "string", "description": "Layer name, e.g. M1, M2, POLY." },
         "purpose": { "type": "string", "description": "LPP purpose, e.g. drawing, pin." },
         "shapes": { "type": "integer", "description": "Drawn-shape count on this layer-purpose." }
+      }
+    },
+    "lvs": {
+      "type": "object",
+      "required": ["status"],
+      "description": "Layout<->schematic connectivity consistency (LVS-lite). Connectivity-driven only; raw drawn layouts (no instTerm/shape nets) and hierarchical/topological matching are deferred.",
+      "properties": {
+        "schema_version": { "type": "string" },
+        "schematic": { "$ref": "#/$defs/cellview" },
+        "layout": { "$ref": "#/$defs/cellview" },
+        "status": { "type": "string", "enum": ["clean", "issues"], "description": "clean = device sets match and every shared terminal's net-group agrees." },
+        "devices": {
+          "type": "object",
+          "description": "Device-set comparison, matched by instance name (first increment).",
+          "properties": {
+            "matched": { "type": "integer", "description": "Instances present in both layout and schematic." },
+            "only_in_layout": { "type": "array", "items": { "type": "string" }, "description": "Instance names only in the layout." },
+            "only_in_schematic": { "type": "array", "items": { "type": "string" }, "description": "Instance names only in the schematic." }
+          }
+        },
+        "net_mismatches": {
+          "type": "array",
+          "description": "Shared instance terminals whose net-group (set of co-connected inst.terms among matched devices) differs between layout and schematic.",
+          "items": { "$ref": "#/$defs/net_mismatch" }
+        }
+      }
+    },
+    "net_mismatch": {
+      "type": "object",
+      "required": ["inst_term"],
+      "properties": {
+        "inst_term": { "type": "string", "description": "The instance terminal, as inst.term." },
+        "schematic_group": { "type": "array", "items": { "type": "string" }, "description": "inst.terms co-connected to this terminal in the schematic (matched-device universe)." },
+        "layout_group": { "type": "array", "items": { "type": "string" }, "description": "inst.terms co-connected to this terminal in the layout (matched-device universe)." }
       }
     }
   }
