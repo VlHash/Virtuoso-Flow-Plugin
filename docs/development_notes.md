@@ -45,8 +45,9 @@ and the tunnel half F.1–F.3 (runner cellview pass-through, result schema 0.2
 with provenance + metric_quality, session resolution). Since M10, the
 **delegated netlist + VFP Daemon** and the **transaction audit** (both below)
 shipped — both live-verified on Project/inv_tb. M12 (approval envelope +
-experiment ledger) is collab-led and not yet started. The **layout side**
-(below) is planned but not started.
+experiment ledger) is planned, not started. The **layout side** (below) is
+underway: L1 (context export), L2 (geometry lint), and L3 (layout↔schematic
+LVS-lite) are done; L4 (layout-edit transactions) is next.
 
 ## Milestone 1 — what's implemented
 
@@ -320,7 +321,7 @@ The Cadence SKILL reference for IC23.1 is bundled under
 `docs/IC231_gui_plugin_docs/` (skuiref = UI, sklangref = language,
 skdfref = design framework, etc.). Prefer it over guessing signatures.
 
-## Layout-side roadmap (L1–L2 done, L3 landed)
+## Layout-side roadmap (L1–L3 done; L4 next)
 
 The layout side mirrors the schematic architecture and reuses the same
 proposal / transaction / context machinery. Phased by value vs. risk:
@@ -360,9 +361,27 @@ proposal / transaction / context machinery. Phased by value vs. risk:
   schematic S–B short does not show as a spurious mismatch. Deferred: raw drawn
   layouts (geometry → net), topological device matching, hierarchy. See
   `docs/layout_l3_plan.md`.
-- **L4 — Layout-edit transactions** (read-write, highest risk). Agent-
-  proposed routing / via / placement edits applied as reversible
-  transactions (layout checkpoint + diff), gated on DRC. Last.
+- **L4 — Layout-edit transactions** (read-write, highest risk; **next**).
+  Routing / via / placement edits applied as reversible transactions: a
+  pre-edit checkpoint (the `vfpCheckpointCellView` pattern), shape +
+  connectivity (reuse L3) + marker diff, rollback, and provenance — the layout
+  analogue of the schematic transaction engine. Gated on checks before keep.
+- **L5 — Generic layout-primitive mechanics** (planned). PDK-agnostic,
+  grid-snapped, transaction-wrapped shape/via/path operations with a uniform
+  contract (input schema · pre-check · dry-run · apply · post-check · diff ·
+  rollback): the parameter-driven *actuators* an external extension can call.
+  These carry no process- or domain-specific judgment.
+
+### Extensibility / execution-end direction (planned)
+
+The longer arc turns VFP into an **extensible, transaction-safe execution end**.
+The core exposes stable hooks — an extension registration API (RPC namespace,
+panels, actions) and layout execution-end calls (export context / selection,
+submit proposal, apply / rollback transaction, run primitive, import / overlay
+markers, register a signoff adapter) — so external extensions can drive the safe
+layout flow without modifying VFP internals. The public core stays generic and
+PDK-agnostic; any design-intent intelligence (recipes, constraints, optimization)
+belongs in the consuming extension, never in this repo.
 
 Split: the layout SKILL (read/write geometry) is ours; the tunnel
 context/proposal/transaction stores are reused, with any schema extension
