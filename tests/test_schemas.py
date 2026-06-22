@@ -174,6 +174,73 @@ def test_context_bad_layout_layer_raises():
         vfp_schemas.validate("context", bad)
 
 
+def test_context_with_lvs_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    ctx = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "Project", "cell": "inv", "view": "layout"},
+        "lvs": {
+            "schema_version": "0.1",
+            "schematic": {"lib": "Project", "cell": "inv", "view": "schematic"},
+            "layout": {"lib": "Project", "cell": "inv", "view": "layout"},
+            "status": "issues",
+            "devices": {
+                "matched": 2,
+                "only_in_layout": ["TAP0"],
+                "only_in_schematic": [],
+            },
+            "net_mismatches": [
+                {"inst_term": "M0.G",
+                 "schematic_group": ["M0.G", "M1.G"],
+                 "layout_group": ["M0.G"]},
+            ],
+        },
+    }
+    assert vfp_schemas.validate("context", ctx) is True
+
+
+def test_context_clean_lvs_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    ctx = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "Project", "cell": "inv", "view": "layout"},
+        "lvs": {
+            "schematic": {"lib": "Project", "cell": "inv", "view": "schematic"},
+            "layout": {"lib": "Project", "cell": "inv", "view": "layout"},
+            "status": "clean",
+            "devices": {"matched": 2, "only_in_layout": [], "only_in_schematic": []},
+            "net_mismatches": [],
+        },
+    }
+    assert vfp_schemas.validate("context", ctx) is True
+
+
+def test_context_bad_lvs_status_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "layout"},
+        "lvs": {"status": "maybe"},  # status must be clean|issues
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("context", bad)
+
+
+def test_context_lvs_missing_status_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1",
+        "cellview": {"lib": "L", "cell": "C", "view": "layout"},
+        "lvs": {"devices": {"matched": 0}},  # missing required "status"
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("context", bad)
+
+
 def test_transaction_with_checkpoint_conforms():
     pytest.importorskip("jsonschema")
     from vfp_tunnel.rpc import schemas as vfp_schemas

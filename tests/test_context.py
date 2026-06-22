@@ -92,6 +92,31 @@ def test_context_with_layout_roundtrips(running_tunnel):
     assert got["layout"]["layers"][0]["layer"] == "M1"
 
 
+def test_context_with_lvs_roundtrips(running_tunnel):
+    from vfp_tunnel.rpc.transport import call
+    host, port = running_tunnel
+    ctx = dict(SAMPLE)
+    ctx["cellview"] = {"lib": "Project", "cell": "inv", "view": "layout"}
+    ctx["lvs"] = {
+        "schema_version": "0.1",
+        "schematic": {"lib": "Project", "cell": "inv", "view": "schematic"},
+        "layout": {"lib": "Project", "cell": "inv", "view": "layout"},
+        "status": "issues",
+        "devices": {"matched": 2, "only_in_layout": [],
+                    "only_in_schematic": ["PIN0"]},
+        "net_mismatches": [
+            {"inst_term": "M1.S",
+             "schematic_group": ["M1.B", "M1.S"],
+             "layout_group": ["M1.S"]},
+        ],
+    }
+    call("design.context.update", {"context": ctx}, host=host, port=port)
+    got = call("design.context.get", {}, host=host, port=port)["context"]
+    assert got["lvs"]["status"] == "issues"
+    assert got["lvs"]["devices"]["matched"] == 2
+    assert got["lvs"]["net_mismatches"][0]["inst_term"] == "M1.S"
+
+
 def test_context_update_rejects_non_object(running_tunnel):
     from vfp_tunnel.rpc.transport import call
     from vfp_tunnel.rpc.jsonrpc import JsonRpcError, INVALID_PARAMS

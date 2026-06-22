@@ -71,10 +71,28 @@ schematic `connectivity`.)
 
 ## Verification
 
-- Live (Virtuoso IC23.1): `Project/inv` schematic vs layout — expect **clean**
-  (matched devices, consistent net-groups). A deliberately mis-wired scratch
-  layout would surface a `net_mismatch`.
-- Python: schema validation of a sample `lvs` block.
+- Live (Virtuoso IC23.1) **DONE 2026-06-22**: all 8 `Project` standard-cell
+  gates (inv/nand/nor/and/or/three_nand/xor/xnor, 2–12 devices) report
+  **clean** — matched devices, consistent net-groups, no false positives. A
+  cross-cell negative (`inv` layout vs `nand` schematic) correctly reports
+  `issues` (device-set diff + net-group mismatches).
+- Python: schema validation of `lvs` blocks (`tests/test_schemas.py`).
+
+### Two PDK realities folded in during the live pass
+
+The first-cut "expect clean" was naive; two refinements were needed:
+
+1. **Pin symbols are not devices.** Schematic pins are `basic` `ipin`/`opin`/
+   `iopin` *instances*, but in the layout a pin is a shape/label, not an
+   instance. They are excluded from the device set (`vfpLvsPinCellP`) so a cell
+   does not flag its own pins as `only_in_schematic`.
+2. **MOS bulk often has no layout instTerm.** A layout device master commonly
+   omits the bulk terminal (substrate connects via a tap, not a drawn net), so
+   a schematic S–B short would pollute the source's net group. Net-group
+   membership is therefore computed over the **shared inst.term universe**
+   (terminals present on *both* sides) — a terminal the layout simply does not
+   model cannot create a spurious mismatch. (Concrete: schematic `M1` = S/B/G/D
+   on VSS/VSS/A/Y; layout `M1` = D/G/S only.)
 
 ## Open questions / limitations (first increment)
 
