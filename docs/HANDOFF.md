@@ -62,8 +62,31 @@ result → constraints) is done. The problem-driven **M8+** plan:
 | **M11** | Connectivity snapshot/diff, txn connectivity audit, auto-net risk + `vfpPinNetLabel`, TB lint + pre-apply checkpoint, **parameter blame chain + batch apply + rollback picker** | done |
 | **Daemon** | **Delegated netlist + VFP Daemon**: a pluggable delegated backend (`plugin` / vcli / command / `module:callable`), netlisting over VFP's own tunnel↔plugin channel, and a VFP-managed headless `virtuoso -nograph` (`vfp daemon` start/status/stop) so delegated netlisting runs unattended — no GUI, no vcli. `plugin` is the default backend; delegated provenance `saved_at` rides a deck-dir sidecar | done — live on Project/inv_tb |
 | **Txn audit** | `created_ts` (precise blame ordering) + `actor` / `session` / `session_fingerprint` bound at apply, closing the two known-debt items below | done |
-| **M12** | Approval envelope + experiment ledger | planned (collab-led) |
+| **M12** | Approval envelope + experiment ledger | planned |
 | **M13** | Transport hardening (errors / UTF-8), deck patch, `doctor --fix` | M13a done; b/c planned |
+
+### Layout track
+
+The layout side mirrors the schematic architecture and reuses the same
+context / proposal / transaction machinery.
+
+| Stage | What | Status |
+|-------|------|--------|
+| **L1** | Layout context export (read-only): cell bbox, instance placement, layer/shape counts, via count → the `layout` context block | done |
+| **L2** | Layout geometry lint: unconnected device pins, net-less metal, off-grid shapes → the `lint` block | done |
+| **L3** | Layout↔schematic consistency (LVS-lite): device-set + per-terminal net-group diff → the `lvs` block. Connectivity-driven; not a sign-off LVS/DRC | done — live on the Project standard-cell library |
+| **L4** | Layout-edit transactions (read-write): reversible geometry edits — geometry snapshot/diff, a pre-edit checkpoint, connectivity diff (reuses L3), and rollback by restoring the checkpoint view | first increment (transaction framework) done — live-verified on a scratch cell, incl. the open-editor GUI case |
+| **L5** | Generic layout-primitive mechanics: PDK-agnostic, grid-snapped, transaction-wrapped shape/via/path ops with dry-run (the parameter-driven actuators) | planned |
+
+### Extensibility direction (planned)
+
+VFP is evolving into an **extensible, transaction-safe execution end**: a stable
+extension API (register an RPC namespace, menu panels, and actions) plus layout
+execution-end hooks (export context / selection, submit proposal, apply /
+rollback transaction, run primitive, import / overlay markers, register a signoff
+adapter) so that **external extensions can drive VFP's safe layout flow without
+forking the core**. The core stays generic and PDK-agnostic; any design-intent
+intelligence lives in the consuming extension, not in this repo.
 
 ## Collaboration
 

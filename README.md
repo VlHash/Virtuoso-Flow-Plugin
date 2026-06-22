@@ -75,7 +75,9 @@ Full read-guide: [docs/architecture.md](docs/architecture.md).
 ## Current Status
 
 Milestones 1–11 and 13a are implemented, plus the delegated netlist + VFP
-Daemon and the transaction audit.
+Daemon and the transaction audit. The schematic closed loop is complete; the
+**layout track** is underway (L1 context export, L2 geometry lint, and L3
+layout↔schematic LVS-lite are done — see the [layout track](docs/HANDOFF.md)).
 
 <div align="center">
 
@@ -95,6 +97,8 @@ Daemon and the transaction audit.
 | Transport hardening: error taxonomy + UTF-8 audit (M13a) | Done |
 | Delegated netlist + VFP Daemon: pluggable backend, netlist over own channel, managed headless Virtuoso | Done |
 | Transaction audit: created_ts + actor / session / fingerprint at apply | Done |
+| Layout context export (L1), geometry lint (L2), layout↔schematic LVS-lite (L3) | Done |
+| Layout-edit transactions (L4); generic layout-primitive mechanics (L5) | Next / planned |
 
 </div>
 

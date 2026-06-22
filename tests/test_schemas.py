@@ -257,3 +257,51 @@ def test_transaction_with_checkpoint_conforms():
         },
     }
     assert vfp_schemas.validate("transaction", txn) is True
+
+
+def test_transaction_layout_geom_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    txn = {
+        "schema_version": "0.1",
+        "transaction_id": "t_lay",
+        "status": "applied",
+        "kind": "layout_geom",
+        "cellview": {"lib": "Project", "cell": "inv", "view": "layout"},
+        "geometry": {
+            "before_counts": {"shapes": 40, "vias": 6, "instances": 2},
+            "after_counts": {"shapes": 41, "vias": 6, "instances": 2},
+            "changes": [
+                {"kind": "shapeAdded", "subject": "M2", "detail": "added rect on M2"},
+                {"kind": "instMoved", "subject": "M1", "detail": "M1 moved"},
+            ],
+        },
+        "checkpoint": {
+            "view": "layout_vfpckpt_edit_Jun_22_15_00_00_2026",
+            "created_at": "2026-06-22T15:00:00",
+        },
+    }
+    assert vfp_schemas.validate("transaction", txn) is True
+
+
+def test_transaction_bad_kind_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1", "transaction_id": "t", "status": "applied",
+        "kind": "bogus_kind",
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("transaction", bad)
+
+
+def test_transaction_bad_geometry_change_kind_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {
+        "schema_version": "0.1", "transaction_id": "t", "status": "applied",
+        "kind": "layout_geom",
+        "geometry": {"changes": [{"kind": "shapeWiggled", "subject": "M2"}]},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("transaction", bad)
