@@ -386,11 +386,22 @@ proposal / transaction / context machinery. Phased by value vs. risk:
   rollback work with a layout editor open on the cell and the reopened window
   shows the rolled-back layout. Next: **L5** generic primitive mechanics on top
   of this.
-- **L5 — Generic layout-primitive mechanics** (planned). PDK-agnostic,
-  grid-snapped, transaction-wrapped shape/via/path operations with a uniform
-  contract (input schema · pre-check · dry-run · apply · post-check · diff ·
-  rollback): the parameter-driven *actuators* an external extension can call.
-  These carry no process- or domain-specific judgment.
+- **L5 — Generic layout-primitive mechanics**. **Done (first increment):**
+  `skill/vfp_layout_prim.il` — an open primitive **registry**
+  (`vfpLayoutRegisterPrimitive`) and a runner (`vfpLayoutRunPrimitive(name
+  params [dryRun])`) with a uniform contract: a **dry-run** returns a proposal
+  (a `layout_primitive` result — the changes it *would* make, with no mutation),
+  and an apply wraps the edit in an L4 transaction (reversible). Two built-in,
+  PDK-agnostic actuators: `widen_net` (set every path on a net to a width) and
+  `move_instance` (offset an instance). Each is `(describeFn, editFn)`; the
+  runner adds open/pre-check/dry-run/apply/result. Schema:
+  `layout_primitive.schema.json`. **Live-verified** on a scratch gate: for both
+  primitives, dry-run leaves geometry untouched, apply commits as a transaction
+  and changes the geometry, and rollback restores it. The primitives carry
+  **no** process- or domain-specific judgment — the intelligence that picks a
+  primitive and its parameters lives in a consuming extension, not here.
+  (Dynamic-scope note: the runner's locals must not shadow `vfpLayoutTxnApply`'s
+  `editFn`, or the apply lambda calls itself.)
 
 ### Extensibility / execution-end direction (planned)
 

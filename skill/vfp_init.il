@@ -39,6 +39,7 @@ VFP_MODULES = '(
   "vfp_proposal.il"
   "vfp_transaction.il"
   "vfp_layout_txn.il"
+  "vfp_layout_prim.il"
   "vfp_menu.il"
   "vfp_dashboard.il"
   "vfp_rpc_server.il"

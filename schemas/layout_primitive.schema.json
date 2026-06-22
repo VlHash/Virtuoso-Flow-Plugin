@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "layout_primitive.schema.json",
+  "title": "VFP Layout Primitive Result",
+  "description": "Result of running a generic layout primitive (L5) — a proposal (dry-run) or an applied, reversible edit. Primitives are parameter-driven, PDK-agnostic actuators; the intelligence that chooses them lives in a consuming extension, not here.",
+  "type": "object",
+  "required": ["primitive", "status"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "0.1" },
+    "primitive": { "type": "string", "description": "Registered primitive name, e.g. widen_net." },
+    "target": { "type": "string", "description": "Primary subject (a net or instance name), for display." },
+    "status": {
+      "type": "string",
+      "enum": ["proposal", "applied", "failed"],
+      "description": "proposal = dry-run (no mutation); applied = edit committed as a transaction; failed = the edit could not be made."
+    },
+    "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+    "changes": {
+      "type": "array",
+      "description": "The concrete changes the primitive would make / made.",
+      "items": { "$ref": "#/$defs/change" }
+    },
+    "required_checks": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Signoff checks the caller should run after applying, e.g. drc, lvs, pex."
+    },
+    "rollback_available": { "type": "boolean", "description": "true for a proposal or an applied transaction (reversible)." },
+    "transaction_id": { "type": "string", "description": "The L4 transaction id when status = applied (empty otherwise)." }
+  },
+  "$defs": {
+    "change": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "type": "string", "description": "Change kind, e.g. path_width, inst_move." },
+        "subject": { "type": "string", "description": "Layer (geometry) or instance name." },
+        "old": {
+          "type": ["string", "number", "array", "null"],
+          "description": "Prior value: a number (width), a string, or a point [x,y].",
+          "items": { "type": "number" }
+        },
+        "new": {
+          "type": ["string", "number", "array", "null"],
+          "description": "Proposed/new value, same shape as old.",
+          "items": { "type": "number" }
+        }
+      }
+    }
+  }
+}

@@ -98,7 +98,7 @@ layout↔schematic LVS-lite are done — see the [layout track](docs/HANDOFF.md)
 | Delegated netlist + VFP Daemon: pluggable backend, netlist over own channel, managed headless Virtuoso | Done |
 | Transaction audit: created_ts + actor / session / fingerprint at apply | Done |
 | Layout context export (L1), geometry lint (L2), layout↔schematic LVS-lite (L3) | Done |
-| Layout-edit transactions (L4); generic layout-primitive mechanics (L5) | Next / planned |
+| Layout-edit transactions (L4a); generic layout-primitive mechanics (L5a: widen_net, move_instance) | Done (first increment) |
 
 </div>
 

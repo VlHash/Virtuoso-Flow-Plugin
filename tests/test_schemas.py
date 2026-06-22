@@ -305,3 +305,50 @@ def test_transaction_bad_geometry_change_kind_raises():
     }
     with pytest.raises(jsonschema.ValidationError):
         vfp_schemas.validate("transaction", bad)
+
+
+def test_layout_primitive_proposal_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    res = {
+        "schema_version": "0.1",
+        "primitive": "widen_net",
+        "target": "VDD",
+        "status": "proposal",
+        "risk_level": "medium",
+        "changes": [
+            {"type": "path_width", "subject": "AA", "old": 0.42, "new": 0.84},
+        ],
+        "required_checks": ["drc"],
+        "rollback_available": True,
+        "transaction_id": "",
+    }
+    assert vfp_schemas.validate("layout_primitive", res) is True
+
+
+def test_layout_primitive_applied_point_change_conforms():
+    pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    res = {
+        "schema_version": "0.1",
+        "primitive": "move_instance",
+        "target": "M0",
+        "status": "applied",
+        "risk_level": "medium",
+        "changes": [
+            {"type": "inst_move", "subject": "M0",
+             "old": [8.877, -7.9], "new": [9.877, -5.9]},
+        ],
+        "required_checks": ["drc", "lvs"],
+        "rollback_available": True,
+        "transaction_id": "t_abc123",
+    }
+    assert vfp_schemas.validate("layout_primitive", res) is True
+
+
+def test_layout_primitive_bad_status_raises():
+    jsonschema = pytest.importorskip("jsonschema")
+    from vfp_tunnel.rpc import schemas as vfp_schemas
+    bad = {"primitive": "widen_net", "status": "maybe"}
+    with pytest.raises(jsonschema.ValidationError):
+        vfp_schemas.validate("layout_primitive", bad)
