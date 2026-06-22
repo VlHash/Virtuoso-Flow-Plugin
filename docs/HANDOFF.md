@@ -75,7 +75,7 @@ context / proposal / transaction machinery.
 | **L1** | Layout context export (read-only): cell bbox, instance placement, layer/shape counts, via count → the `layout` context block | done |
 | **L2** | Layout geometry lint: unconnected device pins, net-less metal, off-grid shapes → the `lint` block | done |
 | **L3** | Layout↔schematic consistency (LVS-lite): device-set + per-terminal net-group diff → the `lvs` block. Connectivity-driven; not a sign-off LVS/DRC | done — live on the Project standard-cell library |
-| **L4** | Layout-edit transactions (read-write): reversible routing / via / placement edits with shape/connectivity/marker diff + rollback, gated on checks | next |
+| **L4** | Layout-edit transactions (read-write): reversible geometry edits — geometry snapshot/diff, a pre-edit checkpoint, connectivity diff (reuses L3), and rollback by restoring the checkpoint view | first increment (transaction framework) done — live-verified on a scratch cell |
 | **L5** | Generic layout-primitive mechanics: PDK-agnostic, grid-snapped, transaction-wrapped shape/via/path ops with dry-run (the parameter-driven actuators) | planned |
 
 ### Extensibility direction (planned)

@@ -13,9 +13,18 @@
       "type": "string",
       "enum": ["applied", "failed", "rolled_back"]
     },
+    "kind": {
+      "type": "string",
+      "enum": ["schematic_param", "layout_geom"],
+      "description": "schematic_param = before/after parameter values, rolled back field-by-field (the default). layout_geom = a layout geometry edit (L4); the diff is in `geometry`, and rollback restores from the `checkpoint` view since geometry is not field-invertible."
+    },
     "cellview": { "$ref": "#/$defs/cellview" },
     "before": { "type": "array", "items": { "$ref": "#/$defs/param_value" } },
     "after": { "type": "array", "items": { "$ref": "#/$defs/param_value" } },
+    "geometry": {
+      "$ref": "#/$defs/geometry",
+      "description": "Layout geometry diff for a layout_geom transaction: shape/instance/via change records and before/after counts. The checkpoint view holds the full pre-edit state; only the compact diff is stored here."
+    },
     "timestamp": { "type": "string", "description": "ISO-8601 timestamp (second-granular)" },
     "created_ts": { "type": "number", "description": "Epoch seconds; orders same-second changes precisely for the blame chain." },
     "actor": { "type": "string", "description": "Who applied/rolled back, e.g. 'agent' or 'user'." },
@@ -64,6 +73,40 @@
         "value": { "type": ["string", "number"] }
       },
       "additionalProperties": false
+    },
+    "counts": {
+      "type": "object",
+      "description": "Object tallies of a layout cellview.",
+      "properties": {
+        "shapes": { "type": "integer" },
+        "vias": { "type": "integer" },
+        "instances": { "type": "integer" }
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "properties": {
+        "before_counts": { "$ref": "#/$defs/counts" },
+        "after_counts": { "$ref": "#/$defs/counts" },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/geometry_change" }
+        }
+      }
+    },
+    "geometry_change": {
+      "type": "object",
+      "required": ["kind", "subject"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["shapeAdded", "shapeRemoved", "shapeModified",
+                   "instMoved", "instReoriented", "viaAdded", "viaRemoved"],
+          "description": "shapeModified = same shape, changed bbox (moved/resized)."
+        },
+        "subject": { "type": "string", "description": "Layer (for shapes/vias) or instance name." },
+        "detail": { "type": "string" }
+      }
     }
   }
 }
