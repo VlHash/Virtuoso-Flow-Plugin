@@ -50,6 +50,13 @@ a suitable `PYTHONPATH` if not installed as a script.)
 | `result_latest` | Latest simulation metrics + constraint verdict |
 | `constraint_check` | Evaluate metrics against limits |
 | `run_list` | Simulation runs + linked results |
+| `extension_list` | Discover capabilities a servicer has announced |
+| `action_request` / `action_get` | Invoke a discovered capability and poll its result |
 
 Proposals are never auto-applied: the agent proposes, a human approves, and the
 plugin applies it as a reversible transaction.
+
+`extension_list` / `action_request` / `action_get` are the generic extension API
+(see `docs/extension_api.md`): discover namespaces a servicer registered, invoke
+`namespace.method` with params, and poll the outcome. The tunnel only routes —
+the servicer runs the action under its own gating.
