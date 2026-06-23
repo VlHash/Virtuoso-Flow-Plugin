@@ -51,6 +51,9 @@ defun( vfpEventBridgeStart ()
         if( pid
           then
             vfpStateSet('eventBridgePid pid)
+            ;; announce the layout namespace so clients can discover + drive it
+            when( isCallable('vfpRegisterLayoutExtension)
+              errset(vfpRegisterLayoutExtension()) )
             vfpLog("event bridge started")
             t
           else
@@ -109,8 +112,106 @@ defun( vfpServiceNetlistRequests ()
   )
 )
 
+;; ---- generic extension API: the "layout" servicer --------------------
+;; Expose the L1-L5 layout capabilities to ANY tunnel client (a CLI, an MCP/LLM
+;; controller, another process) through the generic action channel. We announce
+;; a "layout" namespace (extension.register) and service its action.request
+;; events: each action's method is dispatched to a layout function and the
+;; result posted with action.complete. The tunnel only routes -- a write action
+;; runs through the L4 transaction engine (reversible), never blind. Mirrors
+;; vfpServiceNetlistRequests.
+
+;; Announce the layout namespace + its methods so clients can discover it.
+defun( vfpRegisterLayoutExtension ()
+  let( (json pf res)
+    json = vfpToJson( vfpJObj(
+      "namespace"   "layout"
+      "methods"     vfpJArr("runPrimitive" "exportContext" "lvs" "rollback")
+      "description" "layout read (context/lvs) + parameter-driven geometry primitives, applied as reversible transactions") )
+    pf = sprintf(nil "%s/extreg_%d.json" vfpHelperOutDir() vfpRpcSeq())
+    if( vfpWriteFile(pf json)
+      then
+        res = vfpRpcExec("extension.register" list("--params-file" pf))
+        errset(deleteFile(pf))
+        res
+      else nil
+    )
+  )
+)
+
+;; Dispatch one layout action -> (resultObj errStr); exactly one is non-nil.
+;; resultObj is a vfpJObj tree (serialized when posted back).
+defun( vfpDispatchLayoutAction (method params)
+  let( (lib cell view)
+    lib  = vfpAlistGet(params "lib")
+    cell = vfpAlistGet(params "cell")
+    view = or( vfpAlistGet(params "view") "layout" )
+    cond(
+      ( equal(method "runPrimitive")
+        list( vfpLayoutRunPrimitive(vfpAlistGet(params "name") params
+                                    vfpAlistGet(params "dry_run"))
+              nil ) )
+      ( equal(method "exportContext")
+        list( vfpExtractLayoutContext(lib cell ?view view) nil ) )
+      ( equal(method "lvs")
+        list( vfpExtractLvs(lib cell) nil ) )
+      ( equal(method "rollback")
+        let( (tid ok)
+          tid = vfpAlistGet(params "transaction_id")
+          ok  = and(tid vfpLayoutTxnRollback(tid))
+          list( vfpJObj("rolled_back" if(ok 'true 'false) "transaction_id" or(tid ""))
+                nil ) ) )
+      ( t list( nil sprintf(nil "unknown layout method: %s" method) ) )
+    )
+  )
+)
+
+;; Post an action's outcome: a result object, or an error string.
+defun( vfpActionComplete (aid resultObj @optional errStr)
+  let( (params json pf res)
+    params = if( errStr
+                 vfpJObj("action_id" aid "error" errStr)
+                 vfpJObj("action_id" aid "result" resultObj) )
+    json = vfpToJson(params)
+    pf = sprintf(nil "%s/actcplt_%d.json" vfpHelperOutDir() vfpRpcSeq())
+    if( vfpWriteFile(pf json)
+      then
+        res = vfpRpcExec("action.complete" list("--params-file" pf))
+        errset(deleteFile(pf))
+        res
+      else nil
+    )
+  )
+)
+
+;; Service pending "layout" actions: dispatch each, then action.complete.
+;; Driven by the action.request event (vfpEventBridgeDataH).
+defun( vfpServiceActionRequests ()
+  let( (res acts)
+    res = vfpRpcExec("action.pending" list("--param" "namespace=layout"))
+    when( car(res)
+      acts = vfpAlistGet(cadr(res) "actions")
+      foreach( act acts
+        let( (aid method params disp resultObj errStr)
+          aid    = vfpAlistGet(act "action_id")
+          method = vfpAlistGet(act "method")
+          params = vfpAlistGet(act "params")
+          disp = car(errset( vfpDispatchLayoutAction(method params) ))
+          resultObj = and(disp car(disp))
+          errStr    = if(disp cadr(disp) "layout action raised an error")
+          when( aid
+            if( or(resultObj errStr)
+              then vfpActionComplete(aid resultObj errStr)
+              else vfpActionComplete(aid nil "layout action produced no result") ) )
+        )
+      )
+    )
+    t
+  )
+)
+
 defun( vfpEventBridgeDataH (cid data)
-  let( (buf pos line sawEvent sawProposal sawNetlist)
+  let( (buf pos line sawEvent sawProposal sawNetlist sawAction)
     cid  ;; unused
     buf = strcat( or(vfpStateGet('eventBuf) "") data )
     pos = nindex(buf "\n")
@@ -127,6 +228,7 @@ defun( vfpEventBridgeDataH (cid data)
           sawEvent = t
           when( and(type nindex(type "proposal.") == 1) sawProposal = t )
           when( equal(type "netlist.request") sawNetlist = t )
+          when( equal(type "action.request") sawAction = t )
         )
       )
       pos = nindex(buf "\n")
@@ -137,6 +239,8 @@ defun( vfpEventBridgeDataH (cid data)
         errset(vfpFetchPendingProposals()) )
       when( and(sawNetlist isCallable('vfpServiceNetlistRequests))
         errset(vfpServiceNetlistRequests()) )
+      when( and(sawAction isCallable('vfpServiceActionRequests))
+        errset(vfpServiceActionRequests()) )
       when( isCallable('vfpUpdateDashboard) errset(vfpUpdateDashboard()) )
     )
     t

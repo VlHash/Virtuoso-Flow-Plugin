@@ -84,19 +84,22 @@ VFP is an **extensible, transaction-safe execution end**: an external controller
 (a CLI, an MCP/LLM client, or another process) can **discover** capabilities and
 **invoke** them through the tunnel without the tunnel knowing them in advance.
 
-**First increment done** — a generic capability-discovery + action channel
+**Done** — a generic capability-discovery + action channel
 (`extension.register`/`list`, `action.request`/`pending`/`complete`/`get`, the
 `action.request` event, and the `extension_list`/`action_request`/`action_get`
-MCP tools). The tunnel is pure transport: it routes an action to whichever
-servicer registered the namespace, and that servicer runs it under its own gating
-(e.g. a layout edit becomes a reversible transaction). See
+MCP tools), plus the **plugin `layout` servicer** that announces a `layout`
+namespace and maps its methods (`runPrimitive`, `exportContext`, `lvs`,
+`rollback`) to the L1–L5 capabilities. The tunnel is pure transport: it routes an
+action to whichever servicer registered the namespace, and that servicer runs it
+under its own gating (a layout edit becomes a reversible transaction). **Live e2e
+verified**: a tunnel client called `action.request(layout.runPrimitive,
+widen_net)` → the plugin applied it as transaction `t_…` → the client read the
+result; a follow-up `action.request(layout.rollback)` restored it. See
 [`docs/extension_api.md`](extension_api.md).
 
-Still planned: a servicer in the plugin that registers a `layout` namespace and
-maps it to the L1–L5 capabilities (context/selection export, run primitive, apply
-/ rollback), plus marker overlay and a signoff-adapter framework. The core stays
-generic and PDK-agnostic; any design-intent intelligence lives in the consuming
-client, not in this repo.
+Still planned: selection-scoped context export, a marker-overlay abstraction, and
+a signoff-adapter framework. The core stays generic and PDK-agnostic; any
+design-intent intelligence lives in the consuming client, not in this repo.
 
 ## Collaboration
 
