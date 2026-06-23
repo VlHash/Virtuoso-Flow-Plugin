@@ -78,15 +78,25 @@ context / proposal / transaction machinery.
 | **L4** | Layout-edit transactions (read-write): reversible geometry edits — geometry snapshot/diff, a pre-edit checkpoint, connectivity diff (reuses L3), and rollback by restoring the checkpoint view | first increment (transaction framework) done — live-verified on a scratch cell, incl. the open-editor GUI case |
 | **L5** | Generic layout-primitive mechanics: PDK-agnostic, parameter-driven actuators with a uniform contract (dry-run → proposal, apply → L4 transaction, rollback) behind an open registry | first increment (`widen_net`, `move_instance`) done — live-verified |
 
-### Extensibility direction (planned)
+### Extensibility — an open execution end
 
-VFP is evolving into an **extensible, transaction-safe execution end**: a stable
-extension API (register an RPC namespace, menu panels, and actions) plus layout
-execution-end hooks (export context / selection, submit proposal, apply /
-rollback transaction, run primitive, import / overlay markers, register a signoff
-adapter) so that **external extensions can drive VFP's safe layout flow without
-forking the core**. The core stays generic and PDK-agnostic; any design-intent
-intelligence lives in the consuming extension, not in this repo.
+VFP is an **extensible, transaction-safe execution end**: an external controller
+(a CLI, an MCP/LLM client, or another process) can **discover** capabilities and
+**invoke** them through the tunnel without the tunnel knowing them in advance.
+
+**First increment done** — a generic capability-discovery + action channel
+(`extension.register`/`list`, `action.request`/`pending`/`complete`/`get`, the
+`action.request` event, and the `extension_list`/`action_request`/`action_get`
+MCP tools). The tunnel is pure transport: it routes an action to whichever
+servicer registered the namespace, and that servicer runs it under its own gating
+(e.g. a layout edit becomes a reversible transaction). See
+[`docs/extension_api.md`](extension_api.md).
+
+Still planned: a servicer in the plugin that registers a `layout` namespace and
+maps it to the L1–L5 capabilities (context/selection export, run primitive, apply
+/ rollback), plus marker overlay and a signoff-adapter framework. The core stays
+generic and PDK-agnostic; any design-intent intelligence lives in the consuming
+client, not in this repo.
 
 ## Collaboration
 

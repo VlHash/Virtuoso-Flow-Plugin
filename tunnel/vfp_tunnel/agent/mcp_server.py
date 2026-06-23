@@ -100,6 +100,36 @@ def events(since: int = 0) -> dict:
     return tools.events(since)
 
 
+@mcp.tool()
+def extension_list() -> list:
+    """Discover capabilities a servicer has announced beyond the built-in
+    tools: a list of namespaces, each with its method names and a description.
+    Use this to learn what `action_request` can invoke (e.g. a `layout`
+    namespace exposing geometry primitives and context export). Returns [] when
+    nothing extra is registered."""
+    return tools.extension_list()
+
+
+@mcp.tool()
+def action_request(namespace: str, method: str,
+                   params: Optional[dict] = None) -> dict:
+    """Invoke a generic, registered capability: ask the servicer that owns
+    `namespace` to run `method` with `params`. The tunnel only routes the
+    request — the servicer executes it under its own gating (e.g. a layout edit
+    is applied as a reversible transaction, not run blindly). Returns
+    {action_id, status, serviced}; then poll `action_get(action_id)` for the
+    outcome. `serviced=false` means no servicer has registered that namespace
+    yet (nothing will run until one connects)."""
+    return tools.action_request(namespace, method, params)
+
+
+@mcp.tool()
+def action_get(action_id: str) -> dict:
+    """Fetch a requested action's record: its status (pending, done, failed)
+    and, once complete, its result or error. Poll after `action_request`."""
+    return tools.action_get(action_id)
+
+
 def main():
     mcp.run()
 

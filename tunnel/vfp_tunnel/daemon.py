@@ -22,6 +22,7 @@ from .proposal.manager import ProposalStore
 from .rpc import schemas
 from .rpc.errors import INVALID_STATE, NOT_FOUND, PERMISSION_DENIED
 from .rpc.jsonrpc import Dispatcher, INVALID_PARAMS, JsonRpcError
+from .extension.registry import ActionStore, ExtensionRegistry
 from .rpc.transport import make_server
 from .session.registry import Registry
 from .sim.job import make_job
@@ -52,6 +53,8 @@ class Tunnel:
         self.runs = RunStore()
         self.jobs = JobStore()
         self.netlist_requests = NetlistRequestStore()
+        self.extensions = ExtensionRegistry()
+        self.actions = ActionStore()
         self.events = EventLog()
         # Default modify-permissions (empty => allow all). Milestone 6's
         # constraint engine will populate this from the constraint file.
@@ -113,6 +116,14 @@ class Tunnel:
         d.register("netlist.complete", self._m_netlist_complete)
         d.register("netlist.get",      self._m_netlist_get)
         d.register("netlist.pending",  self._m_netlist_pending)
+        # Generic extension API: capability discovery + an action channel
+        d.register("extension.register", self._m_extension_register)
+        d.register("extension.unregister", self._m_extension_unregister)
+        d.register("extension.list",     self._m_extension_list)
+        d.register("action.request",     self._m_action_request)
+        d.register("action.pending",     self._m_action_pending)
+        d.register("action.complete",    self._m_action_complete)
+        d.register("action.get",         self._m_action_get)
         # Event stream
         d.register("event.list", self._m_event_list)
         d.register("event.wait", self._m_event_wait)
@@ -661,6 +672,88 @@ class Tunnel:
         to service them."""
         reqs = self.netlist_requests.pending()
         return {"requests": reqs, "count": len(reqs)}
+
+    # ---- generic extension API (discovery + action channel) --------------
+    # The tunnel is pure transport here: it never runs an action. A servicer
+    # announces a namespace (extension.register); any client discovers it
+    # (extension.list) and invokes it (action.request); the servicer pulls the
+    # request (action.pending / the action.request event), runs it under its own
+    # gating, and posts the outcome (action.complete); the client polls
+    # (action.get). Capability-agnostic: any namespace.method an LLM, CLI, or
+    # other process wants to expose flows through here without a tunnel change.
+    def _m_extension_register(self, params):
+        ns = params.get("namespace")
+        try:
+            rec = self.extensions.register(
+                ns, params.get("methods"), params.get("description", ""),
+                params.get("meta"))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        sid = params.get("session_id")
+        if sid:
+            self.registry.touch(sid)
+        self.log.info("extension registered: %s (%d method(s))",
+                      ns, len(rec["methods"]))
+        self.events.emit("extension.registered",
+                         {"namespace": ns, "methods": rec["methods"]})
+        return {"extension": rec}
+
+    def _m_extension_unregister(self, params):
+        ns = params.get("namespace")
+        if not ns:
+            raise JsonRpcError(INVALID_PARAMS, "params.namespace required")
+        removed = self.extensions.unregister(ns)
+        return {"namespace": ns, "removed": removed}
+
+    def _m_extension_list(self, params):
+        items = self.extensions.list()
+        return {"extensions": items, "count": len(items)}
+
+    def _m_action_request(self, params):
+        """Enqueue a generic action for a namespace.method and emit an
+        `action.request` event the servicer pulls. Returns the action_id; the
+        caller polls `action.get`. The namespace need not be pre-registered,
+        but an unregistered one means no servicer is listening yet."""
+        ns = params.get("namespace")
+        method = params.get("method")
+        if not ns or not method:
+            raise JsonRpcError(INVALID_PARAMS,
+                               "params.namespace and params.method required")
+        try:
+            act = self.actions.create(ns, method, params.get("params"))
+        except ValueError as e:
+            raise JsonRpcError(INVALID_PARAMS, str(e))
+        self.events.emit("action.request",
+                         {"action_id": act["action_id"], "namespace": ns,
+                          "method": method})
+        return {"action_id": act["action_id"], "status": act["status"],
+                "serviced": self.extensions.knows(ns)}
+
+    def _m_action_pending(self, params):
+        """Pending actions a servicer pulls, optionally filtered to its
+        namespace (a servicer passes its own namespace)."""
+        acts = self.actions.pending(params.get("namespace"))
+        return {"actions": acts, "count": len(acts)}
+
+    def _m_action_complete(self, params):
+        """A servicer reports an action's result (or error)."""
+        aid = params.get("action_id")
+        if not aid:
+            raise JsonRpcError(INVALID_PARAMS, "params.action_id required")
+        act = self.actions.complete(aid, params.get("result"),
+                                    params.get("error"))
+        if act is None:
+            raise JsonRpcError(NOT_FOUND, "unknown action_id: %s" % aid)
+        self.events.emit("action.complete",
+                         {"action_id": aid, "status": act["status"]})
+        return {"action_id": aid, "status": act["status"]}
+
+    def _m_action_get(self, params):
+        aid = params.get("action_id")
+        act = self.actions.get(aid) if aid else None
+        if act is None:
+            raise JsonRpcError(NOT_FOUND, "unknown action_id: %s" % aid)
+        return {"action": act}
 
     def _job_set(self, method, params, **fields):
         jid = params.get("job_id")

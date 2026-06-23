@@ -403,16 +403,28 @@ proposal / transaction / context machinery. Phased by value vs. risk:
   (Dynamic-scope note: the runner's locals must not shadow `vfpLayoutTxnApply`'s
   `editFn`, or the apply lambda calls itself.)
 
-### Extensibility / execution-end direction (planned)
+### Extensibility / execution-end direction
 
-The longer arc turns VFP into an **extensible, transaction-safe execution end**.
-The core exposes stable hooks — an extension registration API (RPC namespace,
-panels, actions) and layout execution-end calls (export context / selection,
-submit proposal, apply / rollback transaction, run primitive, import / overlay
-markers, register a signoff adapter) — so external extensions can drive the safe
-layout flow without modifying VFP internals. The public core stays generic and
-PDK-agnostic; any design-intent intelligence (recipes, constraints, optimization)
-belongs in the consuming extension, never in this repo.
+VFP is an **extensible, transaction-safe execution end**: an external controller
+(a CLI, an MCP/LLM client, or any other process) discovers capabilities and
+invokes them through the tunnel without the tunnel knowing them in advance.
+
+**First increment done** (`tunnel/vfp_tunnel/extension/`): a generic
+capability-discovery + action channel — `ExtensionRegistry` (a servicer
+announces a `namespace` + `methods`) and `ActionStore` (a request queue),
+exposed as `extension.register`/`unregister`/`list` and
+`action.request`/`pending`/`complete`/`get`, with an `action.request` event and
+the `extension_list`/`action_request`/`action_get` MCP tools. The tunnel is pure
+transport — it routes an action to whichever servicer registered the namespace;
+the servicer runs it under its own gating (so a layout edit becomes a reversible
+L4 transaction, never blind execution). 10 tests. See `docs/extension_api.md`.
+
+Still planned: a servicer in the plugin that registers a `layout` namespace
+mapping to the L1–L5 capabilities (export context / selection, run primitive,
+apply / rollback), plus marker overlay and a signoff-adapter framework. The
+public core stays generic and PDK-agnostic; any design-intent intelligence
+(recipes, constraints, optimization) belongs in the consuming client, never in
+this repo.
 
 Split: the layout SKILL (read/write geometry) is ours; the tunnel
 context/proposal/transaction stores are reused, with any schema extension

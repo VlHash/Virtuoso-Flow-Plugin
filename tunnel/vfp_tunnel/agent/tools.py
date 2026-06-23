@@ -105,3 +105,28 @@ def events(since=0, host=None, port=None):
     """Return tunnel events with seq > *since* (proposal/transaction/result/
     run activity), plus latest_seq for incremental polling."""
     return _call("event.list", {"since": since}, host, port)
+
+
+# ---- generic extension API (discovery + actions) --------------------
+def extension_list(host=None, port=None):
+    """Discover the capabilities a servicer has announced: a list of
+    namespaces, each with its method names and a description. Use this to learn
+    what `action_request` can invoke (e.g. a `layout` namespace exposing
+    `runPrimitive`, `exportContext`, …)."""
+    return _call("extension.list", {}, host, port)["extensions"]
+
+
+def action_request(namespace, method, params=None, host=None, port=None):
+    """Invoke a generic action: ask the servicer that owns *namespace* to run
+    *method* with *params*. The tunnel only routes — the servicer runs it under
+    its own gating (e.g. layout edits go through a reversible transaction).
+    Returns {action_id, status, serviced}; poll `action_get(action_id)` for the
+    result. `serviced=false` means no servicer has registered that namespace."""
+    p = {"namespace": namespace, "method": method, "params": params or {}}
+    return _call("action.request", p, host, port)
+
+
+def action_get(action_id, host=None, port=None):
+    """Fetch a previously requested action's record (status pending/done/failed,
+    plus result or error)."""
+    return _call("action.get", {"action_id": action_id}, host, port)["action"]
