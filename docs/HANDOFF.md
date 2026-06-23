@@ -77,6 +77,7 @@ context / proposal / transaction machinery.
 | **L3** | Layout↔schematic consistency (LVS-lite): device-set + per-terminal net-group diff → the `lvs` block. Connectivity-driven; not a sign-off LVS/DRC | done — live on the Project standard-cell library |
 | **L4** | Layout-edit transactions (read-write): reversible geometry edits — geometry snapshot/diff, a pre-edit checkpoint, connectivity diff (reuses L3), and rollback by restoring the checkpoint view | first increment (transaction framework) done — live-verified on a scratch cell, incl. the open-editor GUI case |
 | **L5** | Generic layout-primitive mechanics: PDK-agnostic, parameter-driven actuators with a uniform contract (dry-run → proposal, apply → L4 transaction, rollback) behind an open registry | first increment (`widen_net`, `move_instance`) done — live-verified |
+| **Routing** | A pluggable **router interface** (`vfpRegisterRouter` + `vfpLayoutRoute`, exposed as the `route` primitive) with a **basic** built-in 2-layer (M1/M2) Lee maze router that connects each net's terminals avoiding device obstacles + other nets. VFP owns the interface + a basic router; an **external optimizer registers a better backend** (`VFP_ROUTER` / `vfpStateSet('router …)`) | basic + interface done — live (routes all 10 nets of a test opamp); pluggable backend verified |
 
 ### Extensibility — an open execution end
 
