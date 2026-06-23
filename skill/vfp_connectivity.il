@@ -375,10 +375,19 @@ defun( vfpInstTermNet (inst termName)
   )
 )
 
+;; Length of a DF relation that may come back as nil / a single object / a
+;; list. SKILL's `~>` returns a bare object (not a 1-list) when a relation has
+;; exactly one member, so length() must not be called on it directly.
+defun( vfpSeqCount (x)
+  cond( ( null(x) 0 ) ( listp(x) length(x) ) ( t 1 ) )
+)
+
 ;; Connection points on a net: instance terminals plus top-level pins. A net
-;; with <=1 is degenerate — whatever sits on it goes nowhere.
+;; with <=1 is degenerate — whatever sits on it goes nowhere. Both `~>instTerms`
+;; and `~>term` can be a single object when the net has exactly one (e.g. a net
+;; bonded only to one top-level pin), so count length-safe.
 defun( vfpNetConnCount (net)
-  if( net plus(length(net~>instTerms) length(net~>term)) 0 )
+  if( net plus(vfpSeqCount(net~>instTerms) vfpSeqCount(net~>term)) 0 )
 )
 
 ;; Scan a (testbench) cellview for connectivity hazards. For every master
