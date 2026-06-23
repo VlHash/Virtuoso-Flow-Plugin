@@ -99,22 +99,34 @@ defun( vfpRMarkObstacles (g cv)
       r0=vfpRGrow(g yCoord(lowerLeft(bb)))  r1=vfpRGrow(g yCoord(upperRight(bb)))
       c=c0 while(c<=c1 r=r0 while(r<=r1 when(vfpRGin(g c r) vfpRGset(g 0 c r 'obs)) r=r+1) c=c+1) ) )
 )
-;; physical point of a layout instTerm's pin (bBox centre of its first pin fig)
+;; physical point of a layout instTerm's pin: bBox centre of its first pin
+;; fig, transformed from the MASTER cellview into the instance's placement
+;; (top-level) coords via the instance transform. Without this every instance
+;; of a shared master collapses onto one point, so a net spanning repeated
+;; device masters yields a single terminal cell. errset-guarded so an odd
+;; transform falls back to the untransformed bBox instead of erroring.
 defun( vfpRTermPoint (it)
-  let( (pin fig bb)
+  let( (pin fig bb tb)
     pin=and(it~>term car(it~>term~>pins))  fig=and(pin pin~>fig)  bb=and(fig fig~>bBox)
+    when( and(bb it~>inst)
+      tb=errset(dbTransformBBox(bb it~>inst~>transform) nil)  when(tb bb=car(tb)) )
     and(bb list( quotient(plus(xCoord(lowerLeft(bb)) xCoord(upperRight(bb))) 2.0)
                  quotient(plus(yCoord(lowerLeft(bb)) yCoord(upperRight(bb))) 2.0) )) )
 )
-;; per net -> list of grid cells list(0 col row) (terminal access on M1)
+;; per net -> list of grid cells list(0 col row) (terminal access on M1);
+;; distinct cells only — multiple instTerms (e.g. many instances of a bulk/
+;; tap master) that land on the same M1 grid cell are collapsed to one.
 defun( vfpRNetTerms (g cv netName)
-  let( (cells)
+  let( (cells seen)
+    seen = makeTable('vfpRSeen nil)
     foreach( i cv~>instances
       foreach( it i~>instTerms
         when( and(it~>net it~>net~>name==netName)
-          let( (p c r) p=vfpRTermPoint(it)
+          let( (p c r k) p=vfpRTermPoint(it)
             when(p c=vfpRGcol(g xCoord(p)) r=vfpRGrow(g yCoord(p))
-              when(vfpRGin(g c r) cells=cons(list(0 c r) cells))) ) ) ) )
+              when( vfpRGin(g c r)
+                k=vfpRGidx(g 0 c r)
+                unless(seen[k] seen[k]=t cells=cons(list(0 c r) cells)) )) ) ) ) )
     cells
   )
 )
