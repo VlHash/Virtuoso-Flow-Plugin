@@ -402,6 +402,22 @@ proposal / transaction / context machinery. Phased by value vs. risk:
   primitive and its parameters lives in a consuming extension, not here.
   (Dynamic-scope note: the runner's locals must not shadow `vfpLayoutTxnApply`'s
   `editFn`, or the apply lambda calls itself.)
+- **Layout routing — interface + basic router**. `skill/vfp_layout_route.il`.
+  Cadence's only batch router is the digital Chip Assembly Router (poor fit for
+  device-level analog) and the XL wire tool is interactive, so VFP grows its
+  own **routing interface** plus a **basic** reference router — deliberately *not*
+  an optimizer. `vfpRegisterRouter(name fn)` + `vfpLayoutRoute(cv [pitch])` run
+  the **active backend** (`VFP_ROUTER` / `vfpStateGet('router)`, default
+  `"basic"`), and `route` is registered as an L5 primitive so it rides the
+  transaction engine + the extension channel. The built-in `"basic"` backend is
+  a 2-layer (M1/M2) **Lee maze router**: per net (≥2 terminals) it seeds with one
+  terminal then maze-routes the rest to the net's claimed cells, marking device
+  bBoxes as M1 obstacles and other nets as occupied (different layers don't short
+  except at vias → connectivity-correct, no shorts). Best-effort DRC only (grid
+  pitch ≈ DRC pitch). **Live**: loaded under vcli, routed all 10 nets of a test
+  opamp (M1 geometry, no shorts); the pluggable backend verified by dispatching
+  to a registered stub. **Optimized routing/placement is a consuming engine's
+  job** — it registers a better backend; the core stays generic and basic.
 
 ### Extensibility / execution-end direction
 
