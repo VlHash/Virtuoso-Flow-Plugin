@@ -419,12 +419,23 @@ transport — it routes an action to whichever servicer registered the namespace
 the servicer runs it under its own gating (so a layout edit becomes a reversible
 L4 transaction, never blind execution). 10 tests. See `docs/extension_api.md`.
 
-Still planned: a servicer in the plugin that registers a `layout` namespace
-mapping to the L1–L5 capabilities (export context / selection, run primitive,
-apply / rollback), plus marker overlay and a signoff-adapter framework. The
-public core stays generic and PDK-agnostic; any design-intent intelligence
-(recipes, constraints, optimization) belongs in the consuming client, never in
-this repo.
+**Second increment done** — the plugin `layout` servicer (`vfp_rpc_server.il`):
+`vfpRegisterLayoutExtension` announces a `layout` namespace (methods
+`runPrimitive` / `exportContext` / `lvs` / `rollback`) on connect, and
+`vfpServiceActionRequests` (fired by the `action.request` event, mirroring
+`vfpServiceNetlistRequests`) pulls pending `layout` actions, dispatches each to
+the matching L1–L5 function via `vfpDispatchLayoutAction`, and posts the result
+with `action.complete`. So any tunnel client (CLI, MCP/LLM, other process) can
+discover the layout capabilities and drive them — a write still runs through the
+L4 transaction engine, never blind. **Live e2e verified** against an isolated
+daemon: client `action.request(layout.runPrimitive, widen_net)` → plugin applied
+it as a transaction → client `action.get` returned the `layout_primitive` result
+with the `transaction_id`; a `layout.rollback` action then restored the geometry.
+
+Still planned: selection-scoped context export, a marker-overlay abstraction, and
+a signoff-adapter framework. The public core stays generic and PDK-agnostic; any
+design-intent intelligence (recipes, constraints, optimization) belongs in the
+consuming client, never in this repo.
 
 Split: the layout SKILL (read/write geometry) is ours; the tunnel
 context/proposal/transaction stores are reused, with any schema extension
