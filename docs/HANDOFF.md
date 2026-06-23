@@ -89,8 +89,8 @@ VFP is an **extensible, transaction-safe execution end**: an external controller
 (`extension.register`/`list`, `action.request`/`pending`/`complete`/`get`, the
 `action.request` event, and the `extension_list`/`action_request`/`action_get`
 MCP tools), plus the **plugin `layout` servicer** that announces a `layout`
-namespace and maps its methods (`runPrimitive`, `exportContext`, `lvs`,
-`rollback`) to the L1–L5 capabilities. The tunnel is pure transport: it routes an
+namespace and maps its methods (`runPrimitive`, `route`, `exportContext`, `lvs`,
+`rollback`) to the L1–L5 + routing capabilities. The tunnel is pure transport: it routes an
 action to whichever servicer registered the namespace, and that servicer runs it
 under its own gating (a layout edit becomes a reversible transaction). **Live e2e
 verified**: a tunnel client called `action.request(layout.runPrimitive,
@@ -101,6 +101,24 @@ result; a follow-up `action.request(layout.rollback)` restored it. See
 Still planned: selection-scoped context export, a marker-overlay abstraction, and
 a signoff-adapter framework. The core stays generic and PDK-agnostic; any
 design-intent intelligence lives in the consuming client, not in this repo.
+
+### Extension points for an external optimizer (placement/routing)
+
+VFP provides the **mechanism + a basic reference**; an external optimization
+engine plugs in its **optimized placement/routing** without touching the core:
+
+| Hook | What an optimizer registers / drives | VFP's built-in default |
+|------|--------------------------------------|------------------------|
+| **Router backend** — `vfpRegisterRouter(name, fn)`, selected by `VFP_ROUTER` / `vfpStateSet('router …)` | its optimized router `fn(cv, grid)` | `"basic"` 2-layer Lee maze router |
+| **Primitive registry** — `vfpLayoutRegisterPrimitive(name, describeFn, editFn, risk, checks)` | new layout actuators (e.g. matched-pair place, guard ring, shielding) | `widen_net`, `move_instance`, `route` |
+| **Action namespace** — `extension.register(namespace, methods)` + service `action.request` | a whole capability namespace (its own recipes) | the `layout` servicer |
+
+What the optimizer **consumes** from VFP (read side): the **L1** layout context,
+**L3** connectivity / LVS-lite, the device geometry. What it **drives** (write
+side): everything goes through **L4 transactions** (reversible, audited) via the
+**L5 primitives** — so an optimizer's placement/routing is itself safe + undoable.
+The intelligence (cost models, recipes, optimization) lives in the engine, never
+in this repo.
 
 ## Collaboration
 

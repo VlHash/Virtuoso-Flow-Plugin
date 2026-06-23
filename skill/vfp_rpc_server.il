@@ -126,8 +126,8 @@ defun( vfpRegisterLayoutExtension ()
   let( (json pf res)
     json = vfpToJson( vfpJObj(
       "namespace"   "layout"
-      "methods"     vfpJArr("runPrimitive" "exportContext" "lvs" "rollback")
-      "description" "layout read (context/lvs) + parameter-driven geometry primitives, applied as reversible transactions") )
+      "methods"     vfpJArr("runPrimitive" "route" "exportContext" "lvs" "rollback")
+      "description" "layout read (context/lvs) + parameter-driven geometry primitives + routing, applied as reversible transactions") )
     pf = sprintf(nil "%s/extreg_%d.json" vfpHelperOutDir() vfpRpcSeq())
     if( vfpWriteFile(pf json)
       then
@@ -150,6 +150,12 @@ defun( vfpDispatchLayoutAction (method params)
       ( equal(method "runPrimitive")
         list( vfpLayoutRunPrimitive(vfpAlistGet(params "name") params
                                     vfpAlistGet(params "dry_run"))
+              nil ) )
+      ( equal(method "route")
+        ;; route the layout's nets via the active router backend, applied as a
+        ;; reversible transaction (the "route" primitive); an external optimizer
+        ;; selects its backend with VFP_ROUTER / vfpStateSet('router ...).
+        list( vfpLayoutRunPrimitive("route" params vfpAlistGet(params "dry_run"))
               nil ) )
       ( equal(method "exportContext")
         list( vfpExtractLayoutContext(lib cell ?view view) nil ) )
